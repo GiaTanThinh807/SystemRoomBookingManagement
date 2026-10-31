@@ -95,6 +95,7 @@ final readonly class PreviewController
             'flashes' => $this->flash->consumeAll(),
             'currentUserName' => $user->fullName,
             'currentUserRole' => $user->role,
+            'currentUserEmail' => $user->email,
             'preview' => $payload,
         ], 'layouts/app'), 200, $securityHeaders);
     }

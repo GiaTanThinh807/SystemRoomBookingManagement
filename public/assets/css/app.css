@@ -1472,3 +1472,79 @@ a:focus-visible {
     .allocation-card__price { justify-items: start; }
     .allocation-total { align-items: stretch; flex-direction: column; }
 }
+
+/* Booking preview and checkout */
+.customer-nav-name { color: var(--blue-950); font-size: .78rem; font-weight: 800; }
+.site-nav form { margin: 0; }
+.checkout-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.checkout-header h1 { margin: 6px 0; color: var(--blue-950); font-size: clamp(2rem,4vw,3rem); letter-spacing: -.045em; }
+.checkout-header > div:first-child > p:last-child { margin: 0; color: var(--ink-500); }
+.preview-expiry { flex: 0 0 225px; display: grid; gap: 3px; padding: 15px 17px; border: 1px solid #9fc4ed; border-radius: 11px; background: var(--blue-50); }
+.preview-expiry span, .preview-expiry small { color: var(--ink-500); font-size: .68rem; }
+.preview-expiry strong { color: var(--blue-950); font-size: .88rem; }
+.checkout-warning { margin: 0 0 18px; }
+.checkout-layout { display: grid; grid-template-columns: minmax(0,1fr) 330px; gap: 24px; align-items: start; }
+.checkout-main { display: grid; gap: 18px; }
+.checkout-property-card, .checkout-rooms, .checkout-contact, .checkout-summary { border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: var(--shadow-soft); }
+.checkout-property-card, .checkout-contact { padding: 22px; }
+.checkout-section-heading { display: flex; align-items: flex-start; gap: 13px; }
+.checkout-section-heading > span { flex: 0 0 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: var(--blue-700); color: #fff; font-size: .68rem; font-weight: 900; }
+.checkout-section-heading h2 { margin: 1px 0 4px; color: var(--blue-950); font-size: 1.15rem; }
+.checkout-section-heading p { margin: 0; color: var(--ink-500); font-size: .75rem; }
+.checkout-stay-facts { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 20px; border: 1px solid var(--line); border-radius: 9px; }
+.checkout-stay-facts > div { display: grid; gap: 3px; padding: 14px; border-right: 1px solid var(--line); }
+.checkout-stay-facts > div:last-child { border-right: 0; }
+.checkout-stay-facts span, .checkout-stay-facts small { color: var(--ink-500); font-size: .66rem; }
+.checkout-stay-facts strong { color: var(--ink-900); font-size: .84rem; }
+.checkout-rooms > .checkout-section-heading { padding: 22px; border-bottom: 1px solid var(--line); }
+.checkout-room { padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.checkout-room:last-child { border-bottom: 0; }
+.checkout-room > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.checkout-room > header span { color: var(--blue-700); font-size: .65rem; font-weight: 850; text-transform: uppercase; }
+.checkout-room > header h3 { margin: 4px 0; font-size: 1.05rem; }
+.checkout-room > header p { margin: 0; color: var(--ink-500); font-size: .72rem; }
+.checkout-room > header > strong { color: var(--blue-950); font-size: 1.15rem; white-space: nowrap; }
+.checkout-room__party { display: flex; gap: 12px; margin: 13px 0; padding: 10px 12px; border-radius: 7px; background: var(--surface-soft); font-size: .72rem; }
+.checkout-room__party span { color: var(--ink-500); }
+.night-price-table { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; }
+.night-price-table > div { display: grid; grid-template-columns: 1.1fr repeat(4,.9fr); gap: 8px; padding: 9px 11px; border-top: 1px solid var(--line); color: var(--ink-700); font-size: .67rem; }
+.night-price-table > div:first-child { border-top: 0; }
+.night-price-table__head { background: var(--blue-50); color: var(--ink-500) !important; font-weight: 800; }
+.night-price-table span:not(:first-child), .night-price-table strong { text-align: right; }
+.checkout-policy { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.checkout-policy > div { display: grid; gap: 3px; padding: 11px 12px; border-radius: 8px; background: #f8fafc; }
+.checkout-policy span, .checkout-policy small { color: var(--ink-500); font-size: .64rem; }
+.checkout-policy strong { font-size: .76rem; }
+.checkout-contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+.checkout-contact-grid label { display: grid; gap: 5px; color: var(--ink-700); font-size: .7rem; font-weight: 750; }
+.checkout-contact-grid input, .checkout-contact-grid textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #b7c3d1; border-radius: 7px; background: #fff; color: var(--ink-900); }
+.checkout-contact-grid textarea { min-height: 76px; resize: vertical; }
+.checkout-contact-grid__wide { grid-column: 1 / -1; }
+.checkout-summary { position: sticky; top: 18px; display: grid; gap: 11px; padding: 21px; }
+.checkout-summary__badge { justify-self: start; padding: 5px 8px; border-radius: 999px; background: var(--blue-100); color: var(--blue-900); font-size: .65rem; font-weight: 850; }
+.checkout-summary h2 { margin: 2px 0 5px; }
+.checkout-summary > div { display: flex; justify-content: space-between; gap: 16px; color: var(--ink-500); font-size: .73rem; }
+.checkout-summary > div strong { color: var(--ink-900); }
+.checkout-summary .checkout-discount { color: var(--success); }
+.checkout-summary__total { margin-top: 3px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--blue-950) !important; font-size: .88rem !important; font-weight: 850; }
+.checkout-summary__total strong { color: var(--blue-950) !important; font-size: 1.25rem; }
+.checkout-summary > p { margin: 4px 0; padding: 11px; border-radius: 7px; background: var(--warning-soft); color: var(--warning); font-size: .68rem; }
+.checkout-summary > small { color: var(--ink-500); font-size: .62rem; text-align: center; }
+.checkout-summary .button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+@media (max-width: 900px) {
+    .checkout-layout { grid-template-columns: 1fr; }
+    .checkout-summary { position: static; }
+}
+
+@media (max-width: 620px) {
+    .checkout-header { align-items: stretch; flex-direction: column; }
+    .preview-expiry { flex-basis: auto; }
+    .checkout-stay-facts, .checkout-policy, .checkout-contact-grid { grid-template-columns: 1fr; }
+    .checkout-stay-facts > div { border-right: 0; border-bottom: 1px solid var(--line); }
+    .checkout-stay-facts > div:last-child { border-bottom: 0; }
+    .checkout-contact-grid__wide { grid-column: 1; }
+    .night-price-table { overflow-x: auto; }
+    .night-price-table > div { min-width: 620px; }
+    .checkout-room > header { flex-direction: column; }
+}

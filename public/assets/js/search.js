@@ -36,7 +36,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const status = root.querySelector('[data-availability-status]');
     const list = root.querySelector('[data-allocation-list]');
     const buttons = [...root.querySelectorAll('[data-payment-timing]')];
+    const previewForm = root.querySelector('[data-preview-form]');
     const formatMoney = (amount) => `${new Intl.NumberFormat('vi-VN').format(Number.parseFloat(amount))} ₫`;
+
+    const updatePreviewForm = (payload) => {
+        if (!previewForm || !payload.allocation) return;
+        const field = (name) => previewForm.querySelector(`[name="${name}"]`);
+        field('criteria').value = JSON.stringify(payload.criteria);
+        field('paymentTiming').value = payload.paymentTiming;
+        field('selectionFingerprint').value = payload.allocation.selectionFingerprint;
+        field('selected').value = payload.allocation.rooms
+            .map((room) => `${room.roomOrder}:${room.roomTypeId}:${room.productId}`)
+            .join(',');
+    };
 
     const render = (payload) => {
         list.replaceChildren();
@@ -46,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const help = document.createElement('p'); help.textContent = 'Hãy thử nhánh thanh toán còn lại hoặc đổi ngày.';
             empty.append(heading, help); list.append(empty); return;
         }
+        updatePreviewForm(payload);
         const productMap = new Map(payload.property.roomProducts.map((item) => [item.productId, item]));
         payload.allocation.rooms.forEach((room) => {
             const product = productMap.get(room.productId);
@@ -67,7 +80,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = document.createElement('div'); total.className = 'allocation-total';
         const label = document.createElement('span'); label.textContent = `Tổng cho ${payload.allocation.rooms.length} phòng`;
         const amount = document.createElement('strong'); amount.textContent = formatMoney(payload.allocation.grandTotal.amount);
-        total.append(label, amount); list.append(total);
+        total.append(label, amount);
+        if (previewForm) {
+            const next = document.createElement('button');
+            next.className = 'button button--primary'; next.type = 'submit'; next.setAttribute('form', previewForm.id);
+            next.textContent = 'Tiếp tục xác nhận'; total.append(next);
+        } else if (root.dataset.loginUrl) {
+            const login = document.createElement('a'); login.className = 'button button--primary';
+            login.href = root.dataset.loginUrl; login.textContent = 'Đăng nhập để tiếp tục'; total.append(login);
+        }
+        list.append(total);
     };
 
     buttons.forEach((button) => button.addEventListener('click', async () => {
@@ -83,6 +105,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error?.message || 'Không thể kiểm tra phòng.');
             buttons.forEach((item) => item.classList.toggle('is-active', item === button));
+            buttons.forEach((item) => {
+                const summary = payload.timingSummary?.[item.dataset.paymentTiming];
+                if (summary) item.dataset.available = summary.available ? 'true' : 'false';
+            });
             status.textContent = payload.selectionChanged ? payload.changeReason : 'Giá và tồn vừa được kiểm tra lại.';
             render(payload);
             const pageUrl = new URL(window.location.href);

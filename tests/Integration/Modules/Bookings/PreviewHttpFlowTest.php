@@ -78,6 +78,14 @@ final class PreviewHttpFlowTest extends TestCase
         $rawToken = $_SESSION['_checkout_preview_token'] ?? null;
         self::assertIsString($rawToken);
         self::assertStringNotContainsString($rawToken, $checkout->body());
+
+        $page = $this->app->handle(new Request('GET', '/checkout', requestId: 'preview-browser-page'));
+        self::assertSame(200, $page->status());
+        self::assertStringContainsString('Kiểm tra lại trước khi xác nhận', $page->body());
+        self::assertStringContainsString('night-price-table', $page->body());
+        self::assertStringContainsString('Trả tại cơ sở', $page->body());
+        self::assertStringNotContainsString($rawToken, $page->body());
+        self::assertStringNotContainsString('https://', $page->body());
     }
 
     public function test_api_returns_raw_token_once_and_accepts_it_only_from_header_for_checkout(): void
@@ -134,6 +142,33 @@ final class PreviewHttpFlowTest extends TestCase
             requestId: 'preview-no-csrf',
         ));
         self::assertSame(403, $withoutCsrf->status());
+    }
+
+    public function test_logged_in_customer_sees_active_preview_form_on_property_detail(): void
+    {
+        $this->loginCustomer();
+        [$criteria, $card] = $this->searchSelection();
+        $allocation = $card['representative'];
+        $detail = $this->app->handle(new Request(
+            'GET',
+            '/properties/' . $card['property']['slug'],
+            [
+                'destination' => $criteria['destination'],
+                'checkIn' => $criteria['stayPeriod']['checkIn'],
+                'checkOut' => $criteria['stayPeriod']['checkOut'],
+                'rooms' => json_encode($criteria['parties'], JSON_THROW_ON_ERROR),
+                'paymentTiming' => $allocation['paymentTiming'],
+                'selectionFingerprint' => $allocation['selectionFingerprint'],
+                'selected' => $this->selected($allocation['rooms']),
+            ],
+            requestId: 'preview-customer-detail',
+        ));
+
+        self::assertSame(200, $detail->status());
+        self::assertStringContainsString('id="preview-create-form"', $detail->body());
+        self::assertStringContainsString('action="http://localhost/previews"', $detail->body());
+        self::assertStringContainsString('Tiếp tục xác nhận', $detail->body());
+        self::assertStringNotContainsString('Partner Hub', $detail->body());
     }
 
     private function loginCustomer(): void

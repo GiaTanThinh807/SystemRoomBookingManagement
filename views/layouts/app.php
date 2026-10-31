@@ -11,6 +11,7 @@ declare(strict_types=1);
 /** @var array<string, list<string>> $flashes */
 $currentUserRole = $currentUserRole ?? null;
 $authenticated = $currentUserName !== null && $currentUserRole !== null;
+$useAppShell = $authenticated && in_array($currentUserRole, ['PARTNER', 'ADMIN'], true);
 $workspaceUrl = $currentUserRole === 'ADMIN' ? $baseUrl . '/admin/properties/review' : $baseUrl . '/partner/properties';
 $publicPath = dirname(__DIR__, 2) . '/public';
 $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
@@ -36,7 +37,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
     <script src="<?= $assetUrl('/assets/js/properties.js') ?>" defer></script>
     <script src="<?= $assetUrl('/assets/js/search.js') ?>" defer></script>
 </head>
-<body class="<?= $authenticated ? 'has-app-shell' : 'has-public-shell' ?>">
+<body class="<?= $useAppShell ? 'has-app-shell' : 'has-public-shell' ?>">
     <svg class="svg-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16M8 7h2M13 7h1M8 11h2M13 11h1M8 15h2M13 15h1M2 21h20M17 9h2a1 1 0 0 1 1 1v11"/></symbol>
         <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
@@ -67,7 +68,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
     </svg>
     <a class="skip-link" href="#main-content">Bỏ qua đến nội dung chính</a>
 
-    <?php if ($authenticated): ?>
+    <?php if ($useAppShell): ?>
         <div class="app-shell" data-app-shell>
             <aside class="app-sidebar" data-app-sidebar>
                 <a class="app-brand" href="<?= $workspaceUrl ?>" aria-label="StayBooking">
@@ -116,7 +117,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
             </div>
         </div>
     <?php else: ?>
-        <header class="site-header"><div class="container site-header__inner"><a class="brand" href="<?= $baseUrl ?>/" aria-label="StayBooking"><img class="brand__logo" src="<?= $assetUrl('/assets/images/accommodation/shared/logoNew.png') ?>" width="186" height="62" alt=""></a><nav class="site-nav" aria-label="Điều hướng công khai"><a class="nav-link" href="<?= $baseUrl ?>/#search">Tìm chỗ nghỉ</a><a class="nav-link" href="<?= $baseUrl ?>/auth/login">Đăng nhập</a><a class="button button--header" href="<?= $baseUrl ?>/auth/register">Đăng ký</a></nav></div></header>
+        <header class="site-header"><div class="container site-header__inner"><a class="brand" href="<?= $baseUrl ?>/" aria-label="StayBooking"><img class="brand__logo" src="<?= $assetUrl('/assets/images/accommodation/shared/logoNew.png') ?>" width="186" height="62" alt=""></a><nav class="site-nav" aria-label="Điều hướng công khai"><a class="nav-link" href="<?= $baseUrl ?>/#search">Tìm chỗ nghỉ</a><?php if ($authenticated): ?><span class="customer-nav-name"><?= $currentUserName ?></span><form method="post" action="<?= $baseUrl ?>/auth/logout"><input type="hidden" name="_token" value="<?= $csrfToken ?>"><button class="button button--header" type="submit">Đăng xuất</button></form><?php else: ?><a class="nav-link" href="<?= $baseUrl ?>/auth/login">Đăng nhập</a><a class="button button--header" href="<?= $baseUrl ?>/auth/register">Đăng ký</a><?php endif; ?></nav></div></header>
         <?php if ($flashes !== []): ?><div class="container flash-region" aria-live="polite"><?php foreach ($flashes as $type => $messages): ?><?php foreach ($messages as $message): ?><div class="alert alert--<?= $type === 'success' ? 'success' : 'info' ?>"><?= $message ?></div><?php endforeach; ?><?php endforeach; ?></div><?php endif; ?>
         <main id="main-content" class="container page-content"><?= $content ?></main>
         <footer class="site-footer"><div class="container">StayBooking · Nền tảng đặt phòng tại TP.HCM</div></footer>
