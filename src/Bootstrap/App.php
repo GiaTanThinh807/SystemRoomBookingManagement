@@ -15,6 +15,11 @@ use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
 use App\Http\Middleware\PartnerContextMiddleware;
 use App\Http\Middleware\RequestIdMiddleware;
+use App\Modules\Bookings\Application\PreviewService;
+use App\Modules\Bookings\Application\PreviewSnapshotFactory;
+use App\Modules\Bookings\Http\PreviewController;
+use App\Modules\Bookings\Infrastructure\PreviewRepository;
+use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
 use App\Modules\Commercial\Application\ManageCancellationPolicyService;
 use App\Modules\Commercial\Application\ManageDailyRateService;
 use App\Modules\Commercial\Application\ManagePromotionService;
@@ -333,6 +338,42 @@ final class App
                 $container->get(SearchCriteriaFactory::class),
                 $container->get(SearchService::class),
                 $container->get(PropertyAvailabilityService::class),
+                $container->get(IdentitySession::class),
+                $container->get(SessionBootstrap::class),
+                $container->get(ViewRenderer::class),
+                $container->get(FlashBag::class),
+                $container->get(AppConfig::class),
+            ),
+        );
+        $container->singleton(
+            PreviewRepository::class,
+            static fn (Container $container): PreviewRepository => new PreviewRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
+            PreviewSnapshotFactory::class,
+            static fn (Container $_): PreviewSnapshotFactory => new PreviewSnapshotFactory(),
+        );
+        $container->singleton(
+            PreviewService::class,
+            static fn (Container $container): PreviewService => new PreviewService(
+                $container->get(PropertyAvailabilityService::class),
+                $container->get(PreviewSnapshotFactory::class),
+                $container->get(PreviewRepository::class),
+                $container->get(TokenGenerator::class),
+                $container->get(Hasher::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            PreviewTokenSession::class,
+            static fn (Container $_): PreviewTokenSession => new PreviewTokenSession(),
+        );
+        $container->singleton(
+            PreviewController::class,
+            static fn (Container $container): PreviewController => new PreviewController(
+                $container->get(PreviewService::class),
+                $container->get(SearchCriteriaFactory::class),
+                $container->get(PreviewTokenSession::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),
                 $container->get(ViewRenderer::class),

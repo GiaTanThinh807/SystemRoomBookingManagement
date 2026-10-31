@@ -18,6 +18,7 @@ use App\Modules\Identity\Http\LogoutController;
 use App\Modules\Identity\Http\RegisterController;
 use App\Modules\Identity\Infrastructure\IdentitySession;
 use App\Modules\Identity\Domain\UserAccount;
+use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Commercial\Http\PartnerCommercialController;
 use App\Modules\Inventory\Http\PartnerInventoryController;
 use App\Modules\Properties\Http\AdminPropertyController;
@@ -33,6 +34,7 @@ return static function (Router $router, Container $container): void {
     $auth = $container->get(AuthMiddleware::class);
     $partnerRole = new RoleMiddleware($container->get(IdentitySession::class), [UserAccount::ROLE_PARTNER]);
     $adminRole = new RoleMiddleware($container->get(IdentitySession::class), [UserAccount::ROLE_ADMIN]);
+    $customerRole = new RoleMiddleware($container->get(IdentitySession::class), [UserAccount::ROLE_CUSTOMER]);
     $partnerContext = $container->get(\App\Http\Middleware\PartnerContextMiddleware::class);
 
     $router->get('/', static function (Request $request) use ($container): Response {
@@ -105,6 +107,12 @@ return static function (Router $router, Container $container): void {
         [$requestId],
         'properties.public.availability',
     );
+
+    $preview = $container->get(PreviewController::class);
+    $customerRead = [$requestId, $auth, $customerRole];
+    $customerWrite = [$requestId, $csrf, $auth, $customerRole];
+    $router->post('/previews', $preview->create(...), $customerWrite, 'previews.create');
+    $router->get('/checkout', $preview->checkout(...), $customerRead, 'checkout.show');
 
     $partner = $container->get(PartnerPropertyController::class);
     $partnerRead = [$requestId, $auth, $partnerRole, $partnerContext];
