@@ -127,6 +127,27 @@ final readonly class TransactionalInventoryReservationService implements Invento
         return $released;
     }
 
+    public function confirmActive(int $bookingId): int
+    {
+        $this->assertTransaction();
+        if ($bookingId < 1) {
+            throw new InvalidArgumentException('Booking cần xác nhận giữ tồn không hợp lệ.');
+        }
+
+        $holds = $this->inventory->lockActiveHoldsForBooking($bookingId);
+        if ($holds === []) {
+            throw new DomainException('Booking không còn ledger active để xác nhận.');
+        }
+
+        $confirmed = $this->inventory->clearHoldExpiry(
+            array_map(static fn (array $hold): int => (int) $hold['id'], $holds),
+        );
+        if ($confirmed !== count($holds)) {
+            throw new DomainException('Số ledger được xác nhận không khớp số ledger đã khóa.');
+        }
+        return $confirmed;
+    }
+
     public function findExpiredBookingIds(DateTimeImmutable $at, int $limit = 100): array
     {
         if ($limit < 1 || $limit > 1_000) {

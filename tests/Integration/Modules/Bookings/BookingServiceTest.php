@@ -12,6 +12,7 @@ use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
+use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Inventory\Application\TransactionalInventoryReservationService;
 use App\Modules\Inventory\Infrastructure\InventoryRepository;
@@ -74,6 +75,7 @@ final class BookingServiceTest extends TestCase
         $this->bookings = new BookingService(
             $previewRepository,
             $bookingRepository,
+            new PaymentRepository($this->pdo),
             $availability,
             $snapshotFactory,
             $this->inventory,

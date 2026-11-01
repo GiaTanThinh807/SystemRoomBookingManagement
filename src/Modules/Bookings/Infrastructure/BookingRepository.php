@@ -52,8 +52,8 @@ final readonly class BookingRepository
              VALUES
                 (:code, :clientRequestId, :previewId, :customerId, :propertyId,
                  :checkIn, :checkOut, :bookerName, :bookerEmail, :bookerPhone,
-                 :specialRequest, 'PAY_AT_PROPERTY', 'VND', :grandTotal, 'CONFIRMED',
-                 NULL, :confirmedAt, NULL, :createdAt, :updatedAt)"
+                 :specialRequest, :paymentTiming, 'VND', :grandTotal, :status,
+                 :paymentExpiresAt, :confirmedAt, NULL, :createdAt, :updatedAt)"
         );
         $statement->execute($values);
         return (int) $this->pdo->lastInsertId();
@@ -127,6 +127,47 @@ final readonly class BookingRepository
         $statement->execute(['bookingId' => $bookingId, 'grandTotal' => $grandTotal->decimal()]);
     }
 
+    /** @return array<string, mixed>|null */
+    public function lockState(int $bookingId): ?array
+    {
+        if (!$this->pdo->inTransaction()) {
+            throw new RuntimeException('Booking chỉ được khóa trong transaction.');
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT DatChoID AS id, KhachHangID AS customerId, TrangThai AS status,
+                    ThoiDiemThanhToan AS paymentTiming, TongTien AS grandTotal,
+                    HetHanThanhToanLuc AS paymentExpiresAt
+             FROM DatCho WHERE DatChoID=? FOR UPDATE'
+        );
+        $statement->execute([$bookingId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    public function markConfirmed(int $bookingId, DateTimeImmutable $at): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE DatCho SET TrangThai='CONFIRMED', HetHanThanhToanLuc=NULL, XacNhanLuc=?
+             WHERE DatChoID=? AND TrangThai='PENDING_PAYMENT'"
+        );
+        $statement->execute([$this->format($at), $bookingId]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Booking không thể chuyển sang CONFIRMED.');
+        }
+    }
+
+    public function markPaymentFailed(int $bookingId): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE DatCho SET TrangThai='PAYMENT_FAILED', HetHanThanhToanLuc=NULL
+             WHERE DatChoID=? AND TrangThai='PENDING_PAYMENT'"
+        );
+        $statement->execute([$bookingId]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Booking không thể chuyển sang PAYMENT_FAILED.');
+        }
+    }
+
     public function findById(int $bookingId): ?Booking
     {
         $statement = $this->pdo->prepare($this->bookingSql() . ' WHERE dc.DatChoID = :bookingId');
@@ -181,7 +222,7 @@ final readonly class BookingRepository
             (string) $row['paymentTiming'],
             Money::vnd((string) $row['grandTotal']),
             (string) $row['status'],
-            $this->dateTime((string) $row['confirmedAt']),
+            $row['confirmedAt'] === null ? null : $this->dateTime((string) $row['confirmedAt']),
             $this->dateTime((string) $row['createdAt']),
             $this->items((int) $row['id']),
         );
@@ -262,5 +303,10 @@ final readonly class BookingRepository
     private function dateTime(string $value): DateTimeImmutable
     {
         return new DateTimeImmutable($value, $this->utc);
+    }
+
+    private function format(DateTimeImmutable $value): string
+    {
+        return $value->setTimezone($this->utc)->format('Y-m-d H:i:s.u');
     }
 }

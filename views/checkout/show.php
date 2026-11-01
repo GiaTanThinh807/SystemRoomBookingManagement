@@ -62,7 +62,7 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
         <div><span>Trả ngay</span><strong><?= $money($preview['payNowTotal']) ?></strong></div>
         <div><span>Trả tại cơ sở</span><strong><?= $money($preview['payAtPropertyTotal']) ?></strong></div>
         <p><strong>Chưa giữ phòng.</strong> Giá và tồn sẽ được kiểm tra lần nữa khi tạo booking.</p>
-        <label class="checkout-terms"><input type="checkbox" name="termsAccepted" value="1" required><span>Tôi đã xem giá, chính sách hủy/no-show và đồng ý thanh toán toàn bộ tại cơ sở.</span></label>
+        <label class="checkout-terms"><input type="checkbox" name="termsAccepted" value="1" required><span>Tôi đã xem giá, chính sách hủy/no-show và đồng ý <?= $allocation['paymentTiming'] === 'PAY_ONLINE' ? 'thanh toán trực tuyến toàn bộ' : 'thanh toán toàn bộ tại cơ sở' ?>.</span></label>
         <button class="button button--primary button--block" type="submit">Xác nhận đặt phòng</button>
         <small>Chỉ hiển thị mã đặt chỗ sau khi transaction hoàn tất.</small>
     </aside>
