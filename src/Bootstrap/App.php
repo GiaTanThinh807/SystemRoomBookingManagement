@@ -15,9 +15,13 @@ use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
 use App\Http\Middleware\PartnerContextMiddleware;
 use App\Http\Middleware\RequestIdMiddleware;
+use App\Modules\Bookings\Application\BookingService;
 use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
+use App\Modules\Bookings\Http\BookingController;
 use App\Modules\Bookings\Http\PreviewController;
+use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
+use App\Modules\Bookings\Infrastructure\BookingRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
 use App\Modules\Commercial\Application\ManageCancellationPolicyService;
@@ -373,6 +377,41 @@ final class App
             static fn (Container $container): PreviewController => new PreviewController(
                 $container->get(PreviewService::class),
                 $container->get(SearchCriteriaFactory::class),
+                $container->get(PreviewTokenSession::class),
+                $container->get(IdentitySession::class),
+                $container->get(SessionBootstrap::class),
+                $container->get(ViewRenderer::class),
+                $container->get(FlashBag::class),
+                $container->get(AppConfig::class),
+            ),
+        );
+        $container->singleton(
+            BookingRepository::class,
+            static fn (Container $container): BookingRepository => new BookingRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
+            BookingCodeGenerator::class,
+            static fn (Container $_): BookingCodeGenerator => new BookingCodeGenerator(),
+        );
+        $container->singleton(
+            BookingService::class,
+            static fn (Container $container): BookingService => new BookingService(
+                $container->get(PreviewRepository::class),
+                $container->get(BookingRepository::class),
+                $container->get(PropertyAvailabilityService::class),
+                $container->get(PreviewSnapshotFactory::class),
+                $container->get(InventoryReservationService::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+                $container->get(BookingCodeGenerator::class),
+                $container->get(Hasher::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            BookingController::class,
+            static fn (Container $container): BookingController => new BookingController(
+                $container->get(BookingService::class),
                 $container->get(PreviewTokenSession::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),
