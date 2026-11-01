@@ -19,6 +19,7 @@ use App\Modules\Identity\Http\RegisterController;
 use App\Modules\Identity\Infrastructure\IdentitySession;
 use App\Modules\Identity\Domain\UserAccount;
 use App\Modules\Bookings\Http\PreviewController;
+use App\Modules\Bookings\Http\BookingController;
 use App\Modules\Commercial\Http\PartnerCommercialController;
 use App\Modules\Inventory\Http\PartnerInventoryController;
 use App\Modules\Properties\Http\AdminPropertyController;
@@ -113,6 +114,14 @@ return static function (Router $router, Container $container): void {
     $customerWrite = [$requestId, $csrf, $auth, $customerRole];
     $router->post('/previews', $preview->create(...), $customerWrite, 'previews.create');
     $router->get('/checkout', $preview->checkout(...), $customerRead, 'checkout.show');
+    $booking = $container->get(BookingController::class);
+    $router->post('/bookings', $booking->store(...), $customerWrite, 'bookings.store');
+    $router->get(
+        '/bookings/{code}/confirmation',
+        $booking->confirmation(...),
+        $customerRead,
+        'bookings.confirmation',
+    );
 
     $partner = $container->get(PartnerPropertyController::class);
     $partnerRead = [$requestId, $auth, $partnerRole, $partnerContext];

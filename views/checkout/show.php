@@ -12,6 +12,7 @@ $money = static fn (mixed $amount): string => number_format((float) $amount, 0, 
 $mealLabels = ['ROOM_ONLY' => 'Không kèm bữa ăn', 'BREAKFAST_INCLUDED' => 'Bao gồm bữa sáng', 'HALF_BOARD' => 'Bao gồm hai bữa'];
 $timingLabel = $allocation['paymentTiming'] === 'PAY_ONLINE' ? 'Thanh toán trực tuyến toàn bộ' : 'Thanh toán toàn bộ tại cơ sở';
 $expiresAt = new DateTimeImmutable((string) $preview['expiresAt']);
+$escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 ?>
 <nav class="public-breadcrumb"><a href="<?= $baseUrl ?>/">Trang chủ</a><span>›</span><span>Xác nhận lựa chọn</span></nav>
 
@@ -20,8 +21,11 @@ $expiresAt = new DateTimeImmutable((string) $preview['expiresAt']);
     <div class="preview-expiry"><span>Có hiệu lực đến</span><strong><?= $expiresAt->format('H:i, d/m/Y') ?> UTC</strong><small>Tối đa 15 phút từ lúc tạo</small></div>
 </header>
 
-<?php foreach ($allocation['warnings'] as $warning): ?><div class="selection-changed checkout-warning"><strong>Dữ liệu đã được cập nhật</strong><span><?= $warning ?></span></div><?php endforeach; ?>
+<?php foreach ($allocation['warnings'] as $warning): ?><div class="selection-changed checkout-warning"><strong>Dữ liệu đã được cập nhật</strong><span><?= $escape($warning) ?></span></div><?php endforeach; ?>
 
+<form method="post" action="<?= $baseUrl ?>/bookings" data-booking-form data-preview-fingerprint="<?= $escape($preview['fingerprint']) ?>">
+    <input type="hidden" name="_token" value="<?= $escape($csrfToken) ?>">
+    <input type="hidden" name="clientRequestId" value="">
 <div class="checkout-layout">
     <div class="checkout-main">
         <section class="checkout-property-card">
@@ -43,8 +47,8 @@ $expiresAt = new DateTimeImmutable((string) $preview['expiresAt']);
         </section>
 
         <section class="checkout-contact">
-            <div class="checkout-section-heading"><span>03</span><div><h2>Thông tin người đặt</h2><p>Thông tin sẽ được dùng khi tạo booking ở bước xác nhận.</p></div></div>
-            <div class="checkout-contact-grid"><label><span>Họ tên</span><input value="<?= $currentUserName ?>" readonly></label><label><span>Email</span><input value="<?= $currentUserEmail ?>" readonly></label><label><span>Số điện thoại</span><input placeholder="Sẽ nhập ở bước tạo booking" disabled></label><label class="checkout-contact-grid__wide"><span>Yêu cầu đặc biệt</span><textarea placeholder="Yêu cầu không phải cam kết phục vụ" disabled></textarea></label></div>
+            <div class="checkout-section-heading"><span>03</span><div><h2>Thông tin người đặt</h2><p>Thông tin liên hệ này sẽ được lưu trong snapshot booking.</p></div></div>
+            <div class="checkout-contact-grid"><label><span>Họ tên</span><input name="bookerName" value="<?= $escape($currentUserName) ?>" maxlength="150" required autocomplete="name"></label><label><span>Email</span><input type="email" name="bookerEmail" value="<?= $escape($currentUserEmail) ?>" maxlength="190" required autocomplete="email"></label><label><span>Số điện thoại</span><input name="bookerPhone" maxlength="20" required autocomplete="tel" placeholder="Ví dụ: 0901234567"></label><label class="checkout-contact-grid__wide"><span>Yêu cầu đặc biệt</span><textarea name="specialRequest" maxlength="1000" placeholder="Yêu cầu không phải cam kết phục vụ"></textarea></label></div>
         </section>
     </div>
 
@@ -58,7 +62,9 @@ $expiresAt = new DateTimeImmutable((string) $preview['expiresAt']);
         <div><span>Trả ngay</span><strong><?= $money($preview['payNowTotal']) ?></strong></div>
         <div><span>Trả tại cơ sở</span><strong><?= $money($preview['payAtPropertyTotal']) ?></strong></div>
         <p><strong>Chưa giữ phòng.</strong> Giá và tồn sẽ được kiểm tra lần nữa khi tạo booking.</p>
-        <button class="button button--primary button--block" type="button" disabled title="Tạo booking thuộc giai đoạn 9">Xác nhận đặt phòng</button>
-        <small>Chức năng tạo booking được mở ở giai đoạn 9.</small>
+        <label class="checkout-terms"><input type="checkbox" name="termsAccepted" value="1" required><span>Tôi đã xem giá, chính sách hủy/no-show và đồng ý thanh toán toàn bộ tại cơ sở.</span></label>
+        <button class="button button--primary button--block" type="submit">Xác nhận đặt phòng</button>
+        <small>Chỉ hiển thị mã đặt chỗ sau khi transaction hoàn tất.</small>
     </aside>
 </div>
+</form>

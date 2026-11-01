@@ -65,6 +65,34 @@ final readonly class PreviewRepository
         return is_array($row) ? $this->hydrate($row) : null;
     }
 
+    public function lockByTokenHash(string $tokenHash): ?BookingPreview
+    {
+        if (!$this->pdo->inTransaction()) {
+            throw new RuntimeException('Preview chỉ được khóa bên trong transaction.');
+        }
+        $statement = $this->pdo->prepare(
+            $this->selectSql() . ' WHERE TokenHash = :tokenHash FOR UPDATE'
+        );
+        $statement->execute(['tokenHash' => $tokenHash]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    public function markUsed(int $previewId, DateTimeImmutable $usedAt): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE XemTruocDatCho SET TrangThai = 'USED', DaDungLuc = :usedAt
+             WHERE XemTruocDatChoID = :previewId AND TrangThai = 'VALID'"
+        );
+        $statement->execute([
+            'previewId' => $previewId,
+            'usedAt' => $this->format($usedAt),
+        ]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Preview không thể được đánh dấu đã sử dụng.');
+        }
+    }
+
     public function invalidate(int $previewId): void
     {
         $statement = $this->pdo->prepare(

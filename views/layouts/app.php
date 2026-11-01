@@ -36,6 +36,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
     <link rel="stylesheet" href="<?= $assetUrl('/assets/css/app.css') ?>">
     <script src="<?= $assetUrl('/assets/js/properties.js') ?>" defer></script>
     <script src="<?= $assetUrl('/assets/js/search.js') ?>" defer></script>
+    <script src="<?= $assetUrl('/assets/js/booking.js') ?>" defer></script>
 </head>
 <body class="<?= $useAppShell ? 'has-app-shell' : 'has-public-shell' ?>">
     <svg class="svg-sprite" width="0" height="0" aria-hidden="true" focusable="false">
