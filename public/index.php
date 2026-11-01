@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Bootstrap\App;
 
 $projectRoot = dirname(__DIR__);
+// Resolve the Composer autoloader from the project root.
 $composerAutoload = $projectRoot . '/vendor/autoload.php';
 
 if (is_file($composerAutoload)) {
