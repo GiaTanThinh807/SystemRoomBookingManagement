@@ -8,6 +8,7 @@ use App\Modules\Bookings\Domain\Booking;
 use App\Modules\Bookings\Domain\BookingPreview;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
+use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Inventory\Application\BookingInventoryItem;
 use App\Modules\Inventory\Application\InventoryReservationService;
@@ -27,6 +28,7 @@ final readonly class BookingService
     public function __construct(
         private PreviewRepository $previews,
         private BookingRepository $bookings,
+        private PaymentRepository $payments,
         private PropertyAvailabilityService $availability,
         private PreviewSnapshotFactory $snapshots,
         private InventoryReservationService $inventory,
@@ -45,6 +47,27 @@ final readonly class BookingService
         string $requestId,
         string $clientIp,
     ): CreatedBooking {
+        return $this->createInternal($previewToken, $customerId, $request, $requestId, $clientIp, 'PAY_AT_PROPERTY');
+    }
+
+    public function createFromPreview(
+        string $previewToken,
+        int $customerId,
+        BookingRequest $request,
+        string $requestId,
+        string $clientIp,
+    ): CreatedBooking {
+        return $this->createInternal($previewToken, $customerId, $request, $requestId, $clientIp, null);
+    }
+
+    private function createInternal(
+        string $previewToken,
+        int $customerId,
+        BookingRequest $request,
+        string $requestId,
+        string $clientIp,
+        ?string $expectedTiming,
+    ): CreatedBooking {
         if (preg_match('/^[a-f0-9]{64,}$/', $previewToken) !== 1 || $customerId < 1) {
             throw $this->previewNotUsable();
         }
@@ -56,6 +79,7 @@ final readonly class BookingService
                 $request,
                 $requestId,
                 $clientIp,
+                $expectedTiming,
             ): CreatedBooking {
                 $preview = $this->previews->lockByTokenHash($this->hasher->hashToken($previewToken));
                 if ($preview === null || $preview->customerId !== $customerId) {
@@ -73,16 +97,18 @@ final readonly class BookingService
                 if ($preview->status !== BookingPreview::STATUS_VALID || $preview->isExpiredAt($now)) {
                     throw $this->previewNotUsable();
                 }
-                if (($preview->allocationSnapshot['paymentTiming'] ?? null) !== 'PAY_AT_PROPERTY'
-                    || !$preview->payNowTotal->isZero()
-                    || !$preview->payAtPropertyTotal->equals($preview->grandTotal)) {
+                $timing = (string) ($preview->allocationSnapshot['paymentTiming'] ?? '');
+                if (!in_array($timing, ['PAY_AT_PROPERTY', 'PAY_ONLINE'], true)
+                    || ($expectedTiming !== null && $timing !== $expectedTiming)
+                    || ($timing === 'PAY_AT_PROPERTY' && (!$preview->payNowTotal->isZero() || !$preview->payAtPropertyTotal->equals($preview->grandTotal)))
+                    || ($timing === 'PAY_ONLINE' && (!$preview->payAtPropertyTotal->isZero() || !$preview->payNowTotal->equals($preview->grandTotal)))) {
                     throw new BookingException(
                         'PAYMENT_TIMING_UNSUPPORTED',
-                        'Giai đoạn này chỉ hỗ trợ booking thanh toán toàn bộ tại cơ sở.',
+                        'Thời điểm hoặc phân rã thanh toán của preview không hợp lệ.',
                     );
                 }
 
-                $snapshot = $this->revalidate($preview);
+                $snapshot = $this->revalidate($preview, $timing);
                 $snapshotData = json_decode(CanonicalJson::encode($snapshot->data), true, 64, JSON_THROW_ON_ERROR);
                 $rooms = is_array($snapshotData) ? ($snapshotData['rooms'] ?? null) : null;
                 if (!is_array($rooms) || !array_is_list($rooms) || $rooms === []) {
@@ -93,6 +119,7 @@ final readonly class BookingService
                 $this->inventory->lockAndAssertAvailable($demands);
 
                 try {
+                    $expiresAt = $timing === 'PAY_ONLINE' ? $now->modify('+10 minutes') : null;
                     $bookingId = $this->bookings->create([
                         'code' => $this->codes->generate(),
                         'clientRequestId' => $request->clientRequestId,
@@ -106,7 +133,10 @@ final readonly class BookingService
                         'bookerPhone' => $request->bookerPhone,
                         'specialRequest' => $request->specialRequest,
                         'grandTotal' => $preview->grandTotal->decimal(),
-                        'confirmedAt' => $this->databaseTime($now),
+                        'paymentTiming' => $timing,
+                        'status' => $timing === 'PAY_ONLINE' ? 'PENDING_PAYMENT' : 'CONFIRMED',
+                        'paymentExpiresAt' => $expiresAt === null ? null : $this->databaseTime($expiresAt),
+                        'confirmedAt' => $timing === 'PAY_ONLINE' ? null : $this->databaseTime($now),
                         'createdAt' => $this->databaseTime($now),
                         'updatedAt' => $this->databaseTime($now),
                     ]);
@@ -146,8 +176,12 @@ final readonly class BookingService
                     );
                 }
 
-                $this->inventory->holdForBooking($bookingId, $inventoryItems, null);
-                $this->bookings->createPayAtPropertyPayment($bookingId, $preview->grandTotal);
+                $this->inventory->holdForBooking($bookingId, $inventoryItems, $expiresAt);
+                if ($timing === 'PAY_ONLINE') {
+                    $this->payments->createOnline($bookingId, $preview->grandTotal, $request->clientRequestId);
+                } else {
+                    $this->bookings->createPayAtPropertyPayment($bookingId, $preview->grandTotal);
+                }
                 $this->previews->markUsed($preview->id, $now);
                 $this->audit->record(
                     $customerId,
@@ -157,8 +191,8 @@ final readonly class BookingService
                     $requestId,
                     null,
                     [
-                        'status' => 'CONFIRMED',
-                        'paymentTiming' => 'PAY_AT_PROPERTY',
+                        'status' => $timing === 'PAY_ONLINE' ? 'PENDING_PAYMENT' : 'CONFIRMED',
+                        'paymentTiming' => $timing,
                         'previewId' => $preview->id,
                         'roomCount' => count($inventoryItems),
                         'grandTotal' => $preview->grandTotal->decimal(),
@@ -229,7 +263,7 @@ final readonly class BookingService
         return new CreatedBooking($booking, true);
     }
 
-    private function revalidate(BookingPreview $preview): PreviewSnapshot
+    private function revalidate(BookingPreview $preview, string $timing): PreviewSnapshot
     {
         $data = $preview->allocationSnapshot;
         $criteria = $this->snapshots->criteriaFromSnapshot($data);
@@ -239,7 +273,7 @@ final readonly class BookingService
         $checked = $this->availability->check(
             $slug,
             $criteria,
-            'PAY_AT_PROPERTY',
+            $timing,
             $selectionFingerprint,
             $selected,
         );
@@ -250,7 +284,7 @@ final readonly class BookingService
             $checked->property,
             $criteria,
             $checked->allocation->rooms,
-            'PAY_AT_PROPERTY',
+            $timing,
             $checked->allocation->selectionFingerprint,
         );
         if (!hash_equals($preview->fingerprint, $current->fingerprint)) {

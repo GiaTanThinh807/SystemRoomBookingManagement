@@ -29,7 +29,7 @@ final readonly class Booking
         public string $paymentTiming,
         public Money $grandTotal,
         public string $status,
-        public DateTimeImmutable $confirmedAt,
+        public ?DateTimeImmutable $confirmedAt,
         public DateTimeImmutable $createdAt,
         public array $items,
     ) {
@@ -39,8 +39,12 @@ final readonly class Booking
         if ($this->code === '' || $this->items === [] || !array_is_list($this->items)) {
             throw new InvalidArgumentException('Booking phải có mã và ít nhất một hạng mục.');
         }
-        if ($this->paymentTiming !== 'PAY_AT_PROPERTY' || $this->status !== 'CONFIRMED') {
-            throw new InvalidArgumentException('Booking giai đoạn này phải được xác nhận và trả tại cơ sở.');
+        if (!in_array($this->paymentTiming, ['PAY_AT_PROPERTY', 'PAY_ONLINE'], true)
+            || !in_array($this->status, ['PENDING_PAYMENT', 'CONFIRMED', 'PAYMENT_FAILED'], true)) {
+            throw new InvalidArgumentException('Timing hoặc trạng thái booking chưa hợp lệ.');
+        }
+        if (($this->status === 'CONFIRMED') !== ($this->confirmedAt !== null)) {
+            throw new InvalidArgumentException('Thời điểm xác nhận phải khớp trạng thái booking.');
         }
     }
 }

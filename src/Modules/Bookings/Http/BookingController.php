@@ -11,6 +11,7 @@ use App\Http\Response;
 use App\Modules\Bookings\Application\BookingException;
 use App\Modules\Bookings\Application\BookingRequest;
 use App\Modules\Bookings\Application\BookingService;
+use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Domain\Booking;
 use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
 use App\Modules\Identity\Domain\CurrentUser;
@@ -28,6 +29,7 @@ final readonly class BookingController
 {
     public function __construct(
         private BookingService $bookings,
+        private OnlinePaymentService $onlinePayments,
         private PreviewTokenSession $tokens,
         private IdentitySession $identity,
         private SessionBootstrap $session,
@@ -52,13 +54,23 @@ final readonly class BookingController
                     : null,
                 $this->accepted($request->body['termsAccepted'] ?? null),
             );
-            $created = $this->bookings->createPayAtProperty(
+            $created = $this->bookings->createFromPreview(
                 $token,
                 $user->id,
                 $bookingRequest,
                 $request->requestId,
                 $request->clientIp,
             );
+            if ($created->booking->paymentTiming === 'PAY_ONLINE'
+                && $created->booking->status === 'PENDING_PAYMENT') {
+                $processed = $this->onlinePayments->process(
+                    $created->booking->id,
+                    $request->requestId,
+                    $request->clientIp,
+                    $created->replayed,
+                );
+                $created = new \App\Modules\Bookings\Application\CreatedBooking($processed, $created->replayed);
+            }
         } catch (BookingException $exception) {
             throw new ConflictHttpException($exception->errorCode, $exception->getMessage());
         } catch (InvalidArgumentException $exception) {
@@ -67,9 +79,12 @@ final readonly class BookingController
 
         $this->tokens->clear();
         if ($request->expectsJson()) {
+            $status = $created->booking->status === 'PENDING_PAYMENT'
+                ? 202
+                : ($created->booking->status === 'PAYMENT_FAILED' ? 409 : ($created->replayed ? 200 : 201));
             return Response::json(
                 ['booking' => $this->payload($created->booking), 'replayed' => $created->replayed],
-                $created->replayed ? 200 : 201,
+                $status,
                 ['Cache-Control' => 'no-store'],
             );
         }
@@ -95,7 +110,7 @@ final readonly class BookingController
         }
 
         return Response::html($this->views->render('bookings/confirmation', [
-            'title' => 'Đặt phòng thành công · StayBooking',
+            'title' => 'Trạng thái đặt phòng · StayBooking',
             'baseUrl' => rtrim($this->config->url, '/'),
             'csrfToken' => $this->session->csrfToken(),
             'flashes' => $this->flash->consumeAll(),
@@ -123,7 +138,7 @@ final readonly class BookingController
             'currency' => 'VND',
             'grandTotal' => $booking->grandTotal->decimal(),
             'status' => $booking->status,
-            'confirmedAt' => $booking->confirmedAt->format(DATE_ATOM),
+            'confirmedAt' => $booking->confirmedAt?->format(DATE_ATOM),
             'items' => $booking->items,
         ];
     }

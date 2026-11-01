@@ -15,6 +15,9 @@ interface InventoryReservationService
     /** @param list<BookingInventoryItem> $items */
     public function holdForBooking(int $bookingId, array $items, ?DateTimeImmutable $expiresAt): void;
 
+    /** Chuyển hold online đã thanh toán thành hold không còn thời hạn. */
+    public function confirmActive(int $bookingId): int;
+
     /** @return int Số ledger vừa chuyển từ ACTIVE sang RELEASED. */
     public function releaseActive(int $bookingId, string $reason): int;
 

@@ -265,6 +265,22 @@ final readonly class InventoryRepository
         return $statement->rowCount();
     }
 
+    /** @param list<int> $holdIds */
+    public function clearHoldExpiry(array $holdIds): int
+    {
+        if ($holdIds === []) {
+            throw new InvalidArgumentException('Danh sách ledger xác nhận không được rỗng.');
+        }
+        $placeholders = implode(',', array_fill(0, count($holdIds), '?'));
+        $statement = $this->pdo->prepare(
+            "UPDATE GiuTonPhongDem SET HetHanLuc = NULL
+             WHERE GiuTonPhongDemID IN (" . $placeholders . ")
+                 AND TrangThai = 'ACTIVE' AND HetHanLuc IS NOT NULL"
+        );
+        $statement->execute($holdIds);
+        return $statement->rowCount();
+    }
+
     /** @return list<int> */
     public function findExpiredBookingIds(DateTimeImmutable $at, int $limit): array
     {
