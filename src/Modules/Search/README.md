@@ -39,3 +39,5 @@ giai đoạn này; preview và checkout thuộc giai đoạn 8.
   dữ liệu hiện hành.
 - Kế hoạch truy vấn search, filter tiện nghi và detail được khóa bằng
   `SearchQueryPlanTest` trên fixture chuẩn.
+# Cmnt
+Thêm cmt
