@@ -150,6 +150,59 @@ final class BookingHttpFlowTest extends TestCase
         self::assertSame(403, $withoutCsrf->status());
     }
 
+    public function test_customer_online_payment_only_shows_success_after_payment_is_paid(): void
+    {
+        $this->loginCustomer();
+        [$criteria, $card] = $this->searchSelection('PAY_ONLINE');
+        $allocation = $card['representative'];
+        self::assertSame('PAY_ONLINE', $allocation['paymentTiming']);
+
+        $preview = $this->app->handle(new Request('POST', '/previews', body: [
+            '_token' => $this->session->csrfToken(),
+            'propertySlug' => $card['property']['slug'],
+            'criteria' => json_encode($criteria, JSON_THROW_ON_ERROR),
+            'paymentTiming' => 'PAY_ONLINE',
+            'selectionFingerprint' => $allocation['selectionFingerprint'],
+            'selected' => $this->selected($allocation['rooms']),
+        ], requestId: 'phase10-http-preview'));
+        self::assertSame(303, $preview->status());
+        $rawToken = $_SESSION['_checkout_preview_token'] ?? null;
+        self::assertIsString($rawToken);
+        $this->previewTokenHash = hash('sha256', $rawToken);
+
+        $checkout = $this->app->handle(new Request('GET', '/checkout', requestId: 'phase10-http-checkout'));
+        self::assertSame(200, $checkout->status());
+        self::assertStringContainsString('đồng ý thanh toán trực tuyến toàn bộ', $checkout->body());
+
+        $this->clientRequestId = $this->uuid();
+        $created = $this->app->handle(new Request('POST', '/bookings', body: [
+            '_token' => $this->session->csrfToken(),
+            'clientRequestId' => $this->clientRequestId,
+            'bookerName' => 'Khách HTTP Thanh Toán',
+            'bookerEmail' => 'phase10-http@example.test',
+            'bookerPhone' => '0901234567',
+            'termsAccepted' => '1',
+        ], requestId: 'phase10-http-booking'));
+        self::assertSame(303, $created->status());
+
+        $statement = $this->pdo->prepare(
+            'SELECT dc.TrangThai bookingStatus, tt.TrangThai paymentStatus
+             FROM DatCho dc INNER JOIN ThanhToan tt ON tt.DatChoID=dc.DatChoID
+             WHERE dc.ClientRequestID=?'
+        );
+        $statement->execute([$this->clientRequestId]);
+        self::assertSame(
+            ['bookingStatus' => 'CONFIRMED', 'paymentStatus' => 'PAID'],
+            $statement->fetch(PDO::FETCH_ASSOC),
+        );
+
+        $path = (string) parse_url($created->headers()['Location'], PHP_URL_PATH);
+        $confirmation = $this->app->handle(new Request('GET', $path, requestId: 'phase10-http-confirmation'));
+        self::assertSame(200, $confirmation->status());
+        self::assertStringContainsString('Chỗ nghỉ của bạn đã được đặt', $confirmation->body());
+        self::assertStringContainsString('Thanh toán trực tuyến', $confirmation->body());
+    }
+
     private function loginCustomer(): void
     {
         $response = $this->app->handle(new Request('POST', '/auth/login', body: [
@@ -161,14 +214,14 @@ final class BookingHttpFlowTest extends TestCase
     }
 
     /** @return array{array<string, mixed>, array<string, mixed>} */
-    private function searchSelection(): array
+    private function searchSelection(string $paymentTiming = 'PAY_AT_PROPERTY'): array
     {
         $query = [
             'destination' => 'HCM',
             'checkIn' => '2026-12-10',
             'checkOut' => '2026-12-12',
             'rooms' => '[{"roomOrder":1,"adults":2,"childAges":[]}]',
-            'paymentTiming' => 'PAY_AT_PROPERTY',
+            'paymentTiming' => $paymentTiming,
         ];
         $response = $this->app->handle(new Request(
             'GET',
