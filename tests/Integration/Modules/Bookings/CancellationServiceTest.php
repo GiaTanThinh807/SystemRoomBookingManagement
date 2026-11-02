@@ -8,7 +8,9 @@ use App\Bootstrap\App;
 use App\Modules\Bookings\Application\BookingException;
 use App\Modules\Bookings\Application\CancellationCommand;
 use App\Modules\Bookings\Application\CancellationFeeService;
+use App\Modules\Bookings\Application\CancellationFinalizer;
 use App\Modules\Bookings\Application\CancellationQuoteService;
+use App\Modules\Bookings\Application\CancellationRefundService;
 use App\Modules\Bookings\Application\CancellationService;
 use App\Modules\Bookings\Application\PaymentGateway;
 use App\Modules\Bookings\Application\PaymentGatewayRequest;
@@ -247,15 +249,29 @@ final class CancellationServiceTest extends TestCase
     private function service(FrozenClock $clock, PaymentGateway $gateway): CancellationService
     {
         $cancellations = new CancellationRepository($this->pdo);
+        $payments = new PaymentRepository($this->pdo);
+        $transactions = new TransactionManager($this->pdo, static fn (int $_): null => null);
+        $audit = new DatabaseAuditTrail($this->pdo);
         return new CancellationService(
-            $this->pdo,
             $cancellations,
-            new PaymentRepository($this->pdo),
+            $payments,
             new CancellationFeeService(new CancellationCalculator()),
-            new TransactionalInventoryReservationService($this->pdo, new InventoryRepository($this->pdo), $clock),
-            $gateway,
-            new TransactionManager($this->pdo, static fn (int $_): null => null),
-            new DatabaseAuditTrail($this->pdo),
+            new CancellationFinalizer(
+                $cancellations,
+                $payments,
+                new TransactionalInventoryReservationService($this->pdo, new InventoryRepository($this->pdo), $clock),
+                $audit,
+            ),
+            new CancellationRefundService(
+                $this->pdo,
+                $cancellations,
+                $payments,
+                $gateway,
+                $transactions,
+                $audit,
+                $clock,
+            ),
+            $transactions,
             $clock,
         );
     }

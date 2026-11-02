@@ -19,13 +19,16 @@ use App\Modules\Bookings\Application\BookingAccessService;
 use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingService;
 use App\Modules\Bookings\Application\CancellationFeeService;
+use App\Modules\Bookings\Application\CancellationFinalizer;
 use App\Modules\Bookings\Application\CancellationQuoteService;
+use App\Modules\Bookings\Application\CancellationRefundService;
 use App\Modules\Bookings\Application\CancellationService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
 use App\Modules\Bookings\Application\PaymentGateway;
 use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
+use App\Modules\Bookings\Application\WaiverService;
 use App\Modules\Bookings\Http\BookingController;
 use App\Modules\Bookings\Http\BookingPortalController;
 use App\Modules\Bookings\Http\BookingViewPresenter;
@@ -37,6 +40,7 @@ use App\Modules\Bookings\Infrastructure\MockPaymentGateway;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
+use App\Modules\Bookings\Infrastructure\WaiverRepository;
 use App\Modules\Commercial\Application\ManageCancellationPolicyService;
 use App\Modules\Commercial\Application\CancellationCalculator;
 use App\Modules\Commercial\Application\ManageDailyRateService;
@@ -410,6 +414,10 @@ final class App
             ),
         );
         $container->singleton(
+            WaiverRepository::class,
+            static fn (Container $container): WaiverRepository => new WaiverRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
             CancellationCalculator::class,
             static fn (Container $_): CancellationCalculator => new CancellationCalculator(),
         );
@@ -428,14 +436,46 @@ final class App
             ),
         );
         $container->singleton(
-            CancellationService::class,
-            static fn (Container $container): CancellationService => new CancellationService(
+            CancellationFinalizer::class,
+            static fn (Container $container): CancellationFinalizer => new CancellationFinalizer(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(InventoryReservationService::class),
+                $container->get(AuditTrail::class),
+            ),
+        );
+        $container->singleton(
+            CancellationRefundService::class,
+            static fn (Container $container): CancellationRefundService => new CancellationRefundService(
                 $container->get(PDO::class),
                 $container->get(CancellationRepository::class),
                 $container->get(PaymentRepository::class),
-                $container->get(CancellationFeeService::class),
-                $container->get(InventoryReservationService::class),
                 $container->get(PaymentGateway::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            CancellationService::class,
+            static fn (Container $container): CancellationService => new CancellationService(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(CancellationFeeService::class),
+                $container->get(CancellationFinalizer::class),
+                $container->get(CancellationRefundService::class),
+                $container->get(TransactionManager::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            WaiverService::class,
+            static fn (Container $container): WaiverService => new WaiverService(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(WaiverRepository::class),
+                $container->get(CancellationFinalizer::class),
+                $container->get(CancellationRefundService::class),
                 $container->get(TransactionManager::class),
                 $container->get(AuditTrail::class),
                 $container->get(ClockInterface::class),

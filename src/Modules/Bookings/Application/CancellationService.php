@@ -7,28 +7,23 @@ namespace App\Modules\Bookings\Application;
 use App\Modules\Bookings\Domain\Payment;
 use App\Modules\Bookings\Infrastructure\CancellationRepository;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
-use App\Modules\Inventory\Application\InventoryReservationService;
-use App\Shared\Audit\AuditTrail;
 use App\Shared\Clock\ClockInterface;
 use App\Shared\Database\TransactionManager;
 use App\Shared\Money\Money;
 use DateTimeImmutable;
 use DateTimeZone;
-use PDO;
 use PDOException;
 use RuntimeException;
 
 final readonly class CancellationService
 {
     public function __construct(
-        private PDO $pdo,
         private CancellationRepository $cancellations,
         private PaymentRepository $payments,
         private CancellationFeeService $fees,
-        private InventoryReservationService $inventory,
-        private PaymentGateway $gateway,
+        private CancellationFinalizer $finalizer,
+        private CancellationRefundService $refunds,
         private TransactionManager $transactions,
-        private AuditTrail $audit,
         private ClockInterface $clock,
     ) {
     }
@@ -62,7 +57,7 @@ final readonly class CancellationService
                     $this->payments->startRefund(
                         $payment->id,
                         $expected,
-                        $this->refundKey($command->idempotencyKey),
+                        CancellationFinalizer::refundKey($command->idempotencyKey),
                         'BOOKING_CANCELLATION',
                     );
                 }
@@ -82,49 +77,18 @@ final readonly class CancellationService
                     'Phí hủy đã thay đổi. Hãy xem lại báo giá mới trước khi xác nhận.',
                 );
             }
-            $this->assertPaymentState($context, $payment);
-            $expectedRefund = $payment->paid->compareTo($breakdown->fee) > 0
-                ? $payment->paid->subtract($breakdown->fee)
-                : Money::vnd(0);
-            $snapshot = [
-                'version' => 1,
-                'calculatedAt' => $now->format(DATE_ATOM),
-                'timezone' => (string) $context['timezone'],
-                'bookingTotal' => (string) $context['grandTotal'],
-                'paidAmount' => $payment->paid->decimal(),
-                'fee' => $breakdown->fee->decimal(),
-                'refundExpected' => $expectedRefund->decimal(),
-                'items' => $breakdown->items,
-                'commandFingerprint' => $fingerprint,
-            ];
-
-            $released = $this->inventory->releaseActive((int) $context['id'], 'BOOKING_CANCELLED');
-            $this->cancellations->markCancelled(
-                (int) $context['id'],
+            $expectedRefund = $this->finalizer->finalize(
+                $context,
+                $payment,
                 $command->idempotencyKey,
                 $customerId,
                 $command->reason,
                 $breakdown->fee,
-                $snapshot,
-                $now,
-            );
-            if (!$expectedRefund->isZero()) {
-                $this->payments->startRefund(
-                    $payment->id,
-                    $expectedRefund,
-                    $this->refundKey($command->idempotencyKey),
-                    'BOOKING_CANCELLATION',
-                );
-            }
-            $this->audit->record(
-                $customerId,
+                $breakdown->items,
+                $fingerprint,
                 'BOOKING_CANCELLED',
-                'DatCho',
-                (string) $context['id'],
-                $command->idempotencyKey,
-                ['status' => 'CONFIRMED', 'activeLedgerCount' => $released],
-                ['status' => 'CANCELLED', ...$snapshot],
                 $clientIp,
+                $now,
             );
             return ['bookingId' => (int) $context['id'], 'expectedRefund' => $expectedRefund];
             });
@@ -141,7 +105,7 @@ final readonly class CancellationService
             throw new RuntimeException('Trạng thái refund sau hủy không hợp lệ.');
         }
         if (!$expectedRefund->isZero()) {
-            $this->processRefund(
+            $this->refunds->process(
                 (int) $state['bookingId'],
                 $expectedRefund,
                 $command->idempotencyKey,
@@ -150,97 +114,6 @@ final readonly class CancellationService
             );
         }
         return $this->receipt((int) $state['bookingId']);
-    }
-
-    private function processRefund(
-        int $bookingId,
-        Money $expected,
-        string $cancellationKey,
-        int $actorId,
-        string $clientIp,
-    ): void {
-        $payment = $this->payments->findByBookingId($bookingId);
-        if (!$payment instanceof Payment || $payment->refundStatus === 'SUCCEEDED') {
-            return;
-        }
-        if ($payment->refundStatus !== 'PENDING' || $payment->refundIdempotencyKey === null) {
-            throw new BookingException('REFUND_STATE_INVALID', 'Refund không ở trạng thái có thể xử lý.');
-        }
-        if ($this->pdo->inTransaction()) {
-            throw new RuntimeException('Refund gateway không được gọi khi PDO còn transaction.');
-        }
-        $result = $this->gateway->refund(new PaymentGatewayRequest(
-            $bookingId,
-            $expected,
-            $payment->refundIdempotencyKey,
-            $payment->providerReference,
-        ));
-        $this->transactions->run(function () use (
-            $bookingId,
-            $expected,
-            $cancellationKey,
-            $actorId,
-            $clientIp,
-            $result,
-        ): void {
-            $context = $this->cancellations->lockById($bookingId);
-            $payment = $this->payments->lockByBookingId($bookingId);
-            if ($context === null || !$payment instanceof Payment || $context['status'] !== 'CANCELLED') {
-                throw new BookingException('REFUND_STATE_INVALID', 'Booking refund không còn hợp lệ.');
-            }
-            if ($payment->refundStatus !== 'PENDING') {
-                return;
-            }
-            if ($result->status === PaymentGatewayResult::TIMEOUT) {
-                $this->recordRefundAudit($actorId, $bookingId, $cancellationKey, 'TIMEOUT', $expected, $clientIp);
-                return;
-            }
-            $amountMatches = $result->amount instanceof Money && $result->amount->equals($expected);
-            if ($result->status === PaymentGatewayResult::SUCCESS && $amountMatches) {
-                $this->payments->markRefundSucceeded(
-                    $payment->id,
-                    $expected,
-                    (string) $result->providerReference,
-                    $this->clock->now(),
-                );
-                $this->cancellations->markRefunded($bookingId, $expected);
-                $this->recordRefundAudit($actorId, $bookingId, $cancellationKey, 'SUCCEEDED', $expected, $clientIp);
-                return;
-            }
-            $this->payments->markRefundFailed($payment->id);
-            $this->recordRefundAudit(
-                $actorId,
-                $bookingId,
-                $cancellationKey,
-                $result->status === PaymentGatewayResult::SUCCESS ? 'AMOUNT_MISMATCH' : 'FAILED',
-                $expected,
-                $clientIp,
-            );
-        });
-    }
-
-    private function recordRefundAudit(
-        int $actorId,
-        int $bookingId,
-        string $cancellationKey,
-        string $outcome,
-        Money $expected,
-        string $clientIp,
-    ): void {
-        $requestId = 'refund:' . $cancellationKey . ':' . strtolower($outcome);
-        if ($this->audit->findByRequestId($requestId) !== null) {
-            return;
-        }
-        $this->audit->record(
-            $actorId,
-            'BOOKING_REFUND_' . $outcome,
-            'ThanhToan',
-            (string) $bookingId,
-            $requestId,
-            null,
-            ['expectedAmount' => $expected->decimal(), 'outcome' => $outcome],
-            $clientIp,
-        );
     }
 
     /** @param array<string, mixed> $context */
@@ -254,19 +127,6 @@ final readonly class CancellationService
             || (int) ($context['cancelledBy'] ?? 0) !== $customerId
             || ($context['calculation']['commandFingerprint'] ?? null) !== $fingerprint) {
             throw new BookingException('IDEMPOTENCY_CONFLICT', 'Khóa hủy đã được dùng cho thao tác khác.');
-        }
-    }
-
-    /** @param array<string, mixed> $context */
-    private function assertPaymentState(array $context, Payment $payment): void
-    {
-        if ($context['paymentTiming'] === 'PAY_AT_PROPERTY'
-            && ($payment->timing !== 'PAY_AT_PROPERTY' || $payment->status !== 'NOT_TRACKED')) {
-            throw new BookingException('PAYMENT_STATE_INVALID', 'Payment tại cơ sở không nhất quán.');
-        }
-        if ($context['paymentTiming'] === 'PAY_ONLINE'
-            && ($payment->timing !== 'PAY_ONLINE' || $payment->status !== 'PAID')) {
-            throw new BookingException('PAYMENT_STATE_INVALID', 'Payment online chưa ở trạng thái đã trả.');
         }
     }
 
@@ -292,13 +152,6 @@ final readonly class CancellationService
             Money::vnd((string) $context['refundedAmount']),
             (string) $context['refundStatus'],
         );
-    }
-
-    private function refundKey(string $cancellationKey): string
-    {
-        $hex = hash('sha256', $cancellationKey . ':refund');
-        return substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-5' . substr($hex, 13, 3)
-            . '-a' . substr($hex, 17, 3) . '-' . substr($hex, 20, 12);
     }
 
     private function code(string $code): string
