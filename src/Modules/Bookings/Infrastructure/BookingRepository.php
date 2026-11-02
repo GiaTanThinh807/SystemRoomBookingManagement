@@ -180,6 +180,89 @@ final readonly class BookingRepository
         return is_array($row) ? $row : null;
     }
 
+    /** @return array<string, mixed>|null */
+    public function lockForCustomerByCode(string $code, int $customerId): ?array
+    {
+        if (!$this->pdo->inTransaction()) {
+            throw new RuntimeException('Booking chỉ được khóa trong transaction.');
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT dc.DatChoID AS id, dc.KhachHangID AS customerId, dc.TrangThai AS status,
+                    dc.NgayNhanPhong AS checkIn, cs.GioNhanPhong AS checkInTime,
+                    cs.MuiGio AS timezone, dc.TenNguoiDat AS bookerName,
+                    dc.EmailNguoiDat AS bookerEmail, dc.DienThoaiNguoiDat AS bookerPhone,
+                    dc.YeuCauDacBiet AS specialRequest
+             FROM DatCho dc
+             INNER JOIN CoSoLuuTru cs ON cs.CoSoLuuTruID=dc.CoSoLuuTruID
+             WHERE dc.MaDatCho=:code AND dc.KhachHangID=:customerId
+             FOR UPDATE'
+        );
+        $statement->execute(['code' => $code, 'customerId' => $customerId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    /** @return list<array{id: int, party: array<string, mixed>}> */
+    public function lockItemParties(int $bookingId): array
+    {
+        if (!$this->pdo->inTransaction()) {
+            throw new RuntimeException('Hạng mục booking chỉ được khóa trong transaction.');
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT HangMucDatChoID AS id, KhachJSON AS partyJson
+             FROM HangMucDatCho WHERE DatChoID=:bookingId
+             ORDER BY HangMucDatChoID ASC FOR UPDATE'
+        );
+        $statement->execute(['bookingId' => $bookingId]);
+        $items = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $items[] = ['id' => (int) $row['id'], 'party' => $this->decode((string) $row['partyJson'])];
+        }
+        if ($items === []) {
+            throw new RuntimeException('Booking không có hạng mục khách để cập nhật.');
+        }
+        return $items;
+    }
+
+    public function updateContact(
+        int $bookingId,
+        string $bookerName,
+        string $bookerEmail,
+        string $bookerPhone,
+        ?string $specialRequest,
+    ): void {
+        $statement = $this->pdo->prepare(
+            'UPDATE DatCho SET TenNguoiDat=:bookerName, EmailNguoiDat=:bookerEmail,
+                    DienThoaiNguoiDat=:bookerPhone, YeuCauDacBiet=:specialRequest
+             WHERE DatChoID=:bookingId AND TrangThai=\'CONFIRMED\''
+        );
+        $statement->execute([
+            'bookerName' => $bookerName,
+            'bookerEmail' => $bookerEmail,
+            'bookerPhone' => $bookerPhone,
+            'specialRequest' => $specialRequest,
+            'bookingId' => $bookingId,
+        ]);
+        if ($statement->rowCount() > 1) {
+            throw new RuntimeException('Cập nhật contact booking tác động quá một dòng.');
+        }
+    }
+
+    /** @param array<string, mixed> $party */
+    public function updateItemParty(int $bookingItemId, array $party): void
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE HangMucDatCho SET KhachJSON=:partyJson WHERE HangMucDatChoID=:bookingItemId'
+        );
+        $statement->execute([
+            'partyJson' => CanonicalJson::encode($party),
+            'bookingItemId' => $bookingItemId,
+        ]);
+        if ($statement->rowCount() > 1) {
+            throw new RuntimeException('Cập nhật tên khách tác động quá một hạng mục.');
+        }
+    }
+
     public function markConfirmed(int $bookingId, DateTimeImmutable $at): void
     {
         $statement = $this->pdo->prepare(
