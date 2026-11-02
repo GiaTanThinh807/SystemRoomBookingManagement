@@ -252,6 +252,37 @@ final readonly class InventoryRepository
         return $statement->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** @return list<array<string, mixed>> */
+    public function lockAllHoldsForBooking(int $bookingId): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT gt.GiuTonPhongDemID AS id, gt.HangMucDatChoID AS bookingItemId,
+                    gt.LoaiPhongID AS roomTypeId, gt.NgayLuuTru AS stayDate,
+                    gt.TrangThai AS status
+             FROM GiuTonPhongDem gt
+             INNER JOIN HangMucDatCho hm ON hm.HangMucDatChoID = gt.HangMucDatChoID
+             WHERE hm.DatChoID = :bookingId
+             ORDER BY gt.GiuTonPhongDemID ASC
+             FOR UPDATE"
+        );
+        $statement->execute(['bookingId' => $bookingId]);
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function reactivateHold(int $holdId, DateTimeImmutable $heldAt): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE GiuTonPhongDem
+             SET TrangThai='ACTIVE', HetHanLuc=NULL, GiuLuc=:heldAt,
+                 NhaLuc=NULL, LyDoNha=NULL
+             WHERE GiuTonPhongDemID=:holdId AND TrangThai='RELEASED'"
+        );
+        $statement->execute(['heldAt' => self::databaseTime($heldAt), 'holdId' => $holdId]);
+        if ($statement->rowCount() !== 1) {
+            throw new DomainException('Ledger cũ không thể được kích hoạt lại an toàn.');
+        }
+    }
+
     /** @param list<int> $holdIds */
     public function releaseHolds(array $holdIds, string $reason, DateTimeImmutable $releasedAt): int
     {
