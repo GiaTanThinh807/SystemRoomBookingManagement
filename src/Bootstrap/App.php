@@ -18,6 +18,8 @@ use App\Http\Middleware\RequestIdMiddleware;
 use App\Modules\Bookings\Application\BookingAccessService;
 use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingService;
+use App\Modules\Bookings\Application\CancellationFeeService;
+use App\Modules\Bookings\Application\CancellationQuoteService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
 use App\Modules\Bookings\Application\PaymentGateway;
@@ -29,11 +31,13 @@ use App\Modules\Bookings\Http\BookingViewPresenter;
 use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
+use App\Modules\Bookings\Infrastructure\CancellationRepository;
 use App\Modules\Bookings\Infrastructure\MockPaymentGateway;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
 use App\Modules\Commercial\Application\ManageCancellationPolicyService;
+use App\Modules\Commercial\Application\CancellationCalculator;
 use App\Modules\Commercial\Application\ManageDailyRateService;
 use App\Modules\Commercial\Application\ManagePromotionService;
 use App\Modules\Commercial\Application\ManageRoomProductService;
@@ -397,6 +401,30 @@ final class App
         $container->singleton(
             BookingRepository::class,
             static fn (Container $container): BookingRepository => new BookingRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
+            CancellationRepository::class,
+            static fn (Container $container): CancellationRepository => new CancellationRepository(
+                $container->get(PDO::class),
+            ),
+        );
+        $container->singleton(
+            CancellationCalculator::class,
+            static fn (Container $_): CancellationCalculator => new CancellationCalculator(),
+        );
+        $container->singleton(
+            CancellationFeeService::class,
+            static fn (Container $container): CancellationFeeService => new CancellationFeeService(
+                $container->get(CancellationCalculator::class),
+            ),
+        );
+        $container->singleton(
+            CancellationQuoteService::class,
+            static fn (Container $container): CancellationQuoteService => new CancellationQuoteService(
+                $container->get(CancellationRepository::class),
+                $container->get(CancellationFeeService::class),
+                $container->get(ClockInterface::class),
+            ),
         );
         $container->singleton(
             PaymentRepository::class,
