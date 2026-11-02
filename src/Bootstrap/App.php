@@ -18,22 +18,31 @@ use App\Http\Middleware\RequestIdMiddleware;
 use App\Modules\Bookings\Application\BookingAccessService;
 use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingService;
+use App\Modules\Bookings\Application\CancellationFeeService;
+use App\Modules\Bookings\Application\CancellationFinalizer;
+use App\Modules\Bookings\Application\CancellationQuoteService;
+use App\Modules\Bookings\Application\CancellationRefundService;
+use App\Modules\Bookings\Application\CancellationService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
 use App\Modules\Bookings\Application\PaymentGateway;
 use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
+use App\Modules\Bookings\Application\WaiverService;
 use App\Modules\Bookings\Http\BookingController;
 use App\Modules\Bookings\Http\BookingPortalController;
 use App\Modules\Bookings\Http\BookingViewPresenter;
 use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
+use App\Modules\Bookings\Infrastructure\CancellationRepository;
 use App\Modules\Bookings\Infrastructure\MockPaymentGateway;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
 use App\Modules\Bookings\Infrastructure\PreviewTokenSession;
+use App\Modules\Bookings\Infrastructure\WaiverRepository;
 use App\Modules\Commercial\Application\ManageCancellationPolicyService;
+use App\Modules\Commercial\Application\CancellationCalculator;
 use App\Modules\Commercial\Application\ManageDailyRateService;
 use App\Modules\Commercial\Application\ManagePromotionService;
 use App\Modules\Commercial\Application\ManageRoomProductService;
@@ -399,6 +408,80 @@ final class App
             static fn (Container $container): BookingRepository => new BookingRepository($container->get(PDO::class)),
         );
         $container->singleton(
+            CancellationRepository::class,
+            static fn (Container $container): CancellationRepository => new CancellationRepository(
+                $container->get(PDO::class),
+            ),
+        );
+        $container->singleton(
+            WaiverRepository::class,
+            static fn (Container $container): WaiverRepository => new WaiverRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
+            CancellationCalculator::class,
+            static fn (Container $_): CancellationCalculator => new CancellationCalculator(),
+        );
+        $container->singleton(
+            CancellationFeeService::class,
+            static fn (Container $container): CancellationFeeService => new CancellationFeeService(
+                $container->get(CancellationCalculator::class),
+            ),
+        );
+        $container->singleton(
+            CancellationQuoteService::class,
+            static fn (Container $container): CancellationQuoteService => new CancellationQuoteService(
+                $container->get(CancellationRepository::class),
+                $container->get(CancellationFeeService::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            CancellationFinalizer::class,
+            static fn (Container $container): CancellationFinalizer => new CancellationFinalizer(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(InventoryReservationService::class),
+                $container->get(AuditTrail::class),
+            ),
+        );
+        $container->singleton(
+            CancellationRefundService::class,
+            static fn (Container $container): CancellationRefundService => new CancellationRefundService(
+                $container->get(PDO::class),
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(PaymentGateway::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            CancellationService::class,
+            static fn (Container $container): CancellationService => new CancellationService(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(CancellationFeeService::class),
+                $container->get(CancellationFinalizer::class),
+                $container->get(CancellationRefundService::class),
+                $container->get(TransactionManager::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            WaiverService::class,
+            static fn (Container $container): WaiverService => new WaiverService(
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(WaiverRepository::class),
+                $container->get(CancellationFinalizer::class),
+                $container->get(CancellationRefundService::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
             PaymentRepository::class,
             static fn (Container $container): PaymentRepository => new PaymentRepository($container->get(PDO::class)),
         );
@@ -489,6 +572,9 @@ final class App
             static fn (Container $container): BookingPortalController => new BookingPortalController(
                 $container->get(BookingAccessService::class),
                 $container->get(BookingModificationService::class),
+                $container->get(CancellationQuoteService::class),
+                $container->get(CancellationService::class),
+                $container->get(WaiverService::class),
                 $container->get(BookingViewPresenter::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),

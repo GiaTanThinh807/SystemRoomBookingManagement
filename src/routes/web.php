@@ -132,13 +132,20 @@ return static function (Router $router, Container $container): void {
         $customerWrite,
         'account.bookings.update',
     );
+    $router->post('/account/bookings/{code}/cancel-preview', $bookingPortal->customerCancelPreview(...), $customerWrite, 'account.bookings.cancel-preview');
+    $router->post('/account/bookings/{code}/cancel', $bookingPortal->customerCancel(...), $customerWrite, 'account.bookings.cancel');
+    $router->post('/account/bookings/{code}/waiver', $bookingPortal->customerWaiver(...), $customerWrite, 'account.bookings.waiver');
+    $router->post('/account/bookings/{code}/waiver/withdraw', $bookingPortal->customerWithdrawWaiver(...), $customerWrite, 'account.bookings.waiver-withdraw');
 
     $partner = $container->get(PartnerPropertyController::class);
     $partnerRead = [$requestId, $auth, $partnerRole, $partnerContext];
     $partnerWrite = [$requestId, $csrf, $auth, $partnerRole, $partnerContext];
     $partnerBookingRead = [$requestId, $auth, $partnerRole];
+    $partnerBookingWrite = [$requestId, $csrf, $auth, $partnerRole];
     $router->get('/partner/bookings', $bookingPortal->partnerIndex(...), $partnerBookingRead, 'partner.bookings.index');
     $router->get('/partner/bookings/{code}', $bookingPortal->partnerShow(...), $partnerBookingRead, 'partner.bookings.show');
+    $router->get('/partner/waivers', $bookingPortal->partnerWaivers(...), $partnerBookingRead, 'partner.waivers.index');
+    $router->post('/partner/waivers/{waiverId}/decision', $bookingPortal->partnerWaiverDecision(...), $partnerBookingWrite, 'partner.waivers.decision');
     $router->get('/partner/properties', $partner->index(...), $partnerRead, 'partner.properties.index');
     $router->get('/partner/properties/create', $partner->create(...), $partnerRead, 'partner.properties.create');
     $router->post('/partner/properties', $partner->store(...), $partnerWrite, 'partner.properties.store');

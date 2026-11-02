@@ -35,6 +35,9 @@ final readonly class OnlinePaymentService
         if (!$payment instanceof Payment) {
             throw new BookingException('PAYMENT_NOT_FOUND', 'Không tìm thấy payment online của booking.');
         }
+        if ($payment->idempotencyKey === null) {
+            throw new BookingException('PAYMENT_NOT_FOUND', 'Payment online thiếu idempotency key.');
+        }
         if ($payment->status === 'PAID') {
             return $this->booking($bookingId);
         }
@@ -103,6 +106,9 @@ final readonly class OnlinePaymentService
                     $payment = $this->payments->lockByBookingId($bookingId);
                 }
                 if ($booking['status'] === 'PAYMENT_FAILED' || $payment?->status === 'FAILED') {
+                    if ($payment->idempotencyKey === null) {
+                        throw new BookingException('PAYMENT_NOT_FOUND', 'Payment online thiếu idempotency key.');
+                    }
                     $refundKey = self::derivedUuid($payment->idempotencyKey, 'refund');
                     $captured = $this->payments->recordLateCapture($payment->id, $payment->total, (string) $result->providerReference, $refundKey);
                     if ($captured) {
@@ -119,6 +125,9 @@ final readonly class OnlinePaymentService
         });
 
         if ($latePayment instanceof Payment && $latePayment->refundStatus === 'PENDING') {
+            if ($latePayment->idempotencyKey === null) {
+                throw new BookingException('PAYMENT_NOT_FOUND', 'Payment online thiếu idempotency key.');
+            }
             $refund = $this->gateway->refund(new PaymentGatewayRequest(
                 $bookingId,
                 $latePayment->paid,

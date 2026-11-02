@@ -94,6 +94,27 @@ final readonly class PaymentRepository
         return $statement->rowCount() === 1;
     }
 
+    public function startRefund(int $paymentId, Money $amount, string $refundKey, string $reason): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE ThanhToan SET HoanTienIdempotencyKey=:refundKey,
+                    TrangThaiHoanTien='PENDING', LyDoHoanTien=:reason
+             WHERE ThanhToanID=:id AND TrangThai='PAID' AND DaThanhToan>=:amount
+               AND ((TrangThaiHoanTien='NONE' AND HoanTienIdempotencyKey IS NULL)
+                    OR (TrangThaiHoanTien='FAILED' AND HoanTienIdempotencyKey=:retryKey))"
+        );
+        $statement->execute([
+            'refundKey' => $refundKey,
+            'reason' => $reason,
+            'id' => $paymentId,
+            'amount' => $amount->decimal(),
+            'retryKey' => $refundKey,
+        ]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Không thể khởi tạo hoặc retry refund của payment.');
+        }
+    }
+
     public function markRefundSucceeded(int $paymentId, Money $amount, string $reference, DateTimeImmutable $at): void
     {
         $statement = $this->pdo->prepare(
@@ -119,24 +140,33 @@ final readonly class PaymentRepository
     private function select(int $bookingId, bool $lock): ?Payment
     {
         $statement = $this->pdo->prepare(
-            'SELECT ThanhToanID AS id, DatChoID AS bookingId, TrangThai AS status,
+            'SELECT ThanhToanID AS id, DatChoID AS bookingId, ThoiDiemThanhToan AS timing,
+                    TrangThai AS status,
                     TongPhaiTra AS total, DaThanhToan AS paid, DaHoan AS refunded,
                     IdempotencyKey AS idempotencyKey, ProviderReference AS providerReference,
                     SoLanThu AS attempts, MaLoiCuoi AS lastError,
-                    TrangThaiHoanTien AS refundStatus, XuLyLuc AS processedAt
+                    TrangThaiHoanTien AS refundStatus,
+                    HoanTienIdempotencyKey AS refundIdempotencyKey,
+                    ProviderRefundReference AS refundReference, LyDoHoanTien AS refundReason,
+                    XuLyLuc AS processedAt
              FROM ThanhToan WHERE DatChoID=:bookingId' . ($lock ? ' FOR UPDATE' : '')
         );
         $statement->execute(['bookingId' => $bookingId]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row) || $row['idempotencyKey'] === null) {
+        if (!is_array($row)) {
             return null;
         }
         return new Payment(
-            (int) $row['id'], (int) $row['bookingId'], (string) $row['status'],
+            (int) $row['id'], (int) $row['bookingId'], (string) $row['timing'], (string) $row['status'],
             Money::vnd((string) $row['total']), Money::vnd((string) $row['paid']), Money::vnd((string) $row['refunded']),
-            (string) $row['idempotencyKey'], $row['providerReference'] === null ? null : (string) $row['providerReference'],
+            $row['idempotencyKey'] === null ? null : (string) $row['idempotencyKey'],
+            $row['providerReference'] === null ? null : (string) $row['providerReference'],
             (int) $row['attempts'], $row['lastError'] === null ? null : (string) $row['lastError'],
-            (string) $row['refundStatus'], $row['processedAt'] === null ? null : new DateTimeImmutable((string) $row['processedAt'], new DateTimeZone('UTC')),
+            (string) $row['refundStatus'],
+            $row['refundIdempotencyKey'] === null ? null : (string) $row['refundIdempotencyKey'],
+            $row['refundReference'] === null ? null : (string) $row['refundReference'],
+            $row['refundReason'] === null ? null : (string) $row['refundReason'],
+            $row['processedAt'] === null ? null : new DateTimeImmutable((string) $row['processedAt'], new DateTimeZone('UTC')),
         );
     }
 

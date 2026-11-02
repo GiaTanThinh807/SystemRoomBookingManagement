@@ -94,6 +94,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-grid"/></svg><span>Tổng quan</span></span>
                         <a<?= $activeNavigation === 'properties' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/partner/properties"><svg class="app-icon"><use href="#icon-building"/></svg><span>Cơ sở lưu trú</span></a>
                         <a<?= $activeNavigation === 'bookings' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/partner/bookings"><svg class="app-icon"><use href="#icon-bed"/></svg><span>Đặt phòng</span></a>
+                        <a<?= $activeNavigation === 'waivers' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/partner/waivers"><svg class="app-icon"><use href="#icon-review"/></svg><span>Miễn phí hủy</span></a>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-users"/></svg><span>Khách hàng</span></span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-chart"/></svg><span>Doanh thu</span></span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-file"/></svg><span>Báo cáo</span></span>
