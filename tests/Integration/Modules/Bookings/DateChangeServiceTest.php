@@ -22,6 +22,7 @@ use App\Shared\Database\TransactionManager;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
+use RuntimeException;
 use Tests\Support\TestCase;
 
 final class DateChangeServiceTest extends TestCase
@@ -167,6 +168,30 @@ final class DateChangeServiceTest extends TestCase
         self::assertNull((new DatabaseAuditTrail($this->pdo))->findByRequestId($requestId));
     }
 
+    public function test_two_concurrent_date_changes_finish_with_only_one_inventory_transition(): void
+    {
+        $old = $this->oldStay();
+        $new = $this->shiftedStay(1);
+        $payload = [
+            'bookingId' => (int) $this->booking['DatChoID'],
+            'items' => array_map(static fn (array $item): array => [
+                'id' => (int) $item['HangMucDatChoID'],
+                'roomTypeId' => (int) $item['LoaiPhongID'],
+            ], $this->items),
+            'oldCheckIn' => $old->checkIn,
+            'oldCheckOut' => $old->checkOut,
+            'newCheckIn' => $new->checkIn,
+            'newCheckOut' => $new->checkOut,
+        ];
+
+        $startedAt = microtime(true);
+        $results = $this->runDateChangeWorkers($payload, 2);
+
+        self::assertLessThan(10.0, microtime(true) - $startedAt);
+        self::assertSame(1, count(array_filter($results, static fn (array $result): bool => $result['success'])));
+        self::assertSame($this->expectedActiveCount($new), $this->activeCount());
+    }
+
     private function service(): DateChangeService
     {
         $dates = new DateChangeRepository($this->pdo);
@@ -225,6 +250,47 @@ final class DateChangeServiceTest extends TestCase
             "SELECT COUNT(*) FROM GiuTonPhongDem gt INNER JOIN HangMucDatCho hm ON hm.HangMucDatChoID=gt.HangMucDatChoID WHERE hm.DatChoID="
             . (int) $this->booking['DatChoID'] . " AND gt.TrangThai='ACTIVE'",
         );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function runDateChangeWorkers(array $payload, int $count): array
+    {
+        $worker = dirname(__DIR__, 3) . '/Support/DateChangeConcurrencyWorker.php';
+        $encoded = base64_encode(json_encode($payload, JSON_THROW_ON_ERROR));
+        $processes = [];
+        for ($index = 0; $index < $count; ++$index) {
+            $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($worker) . ' ' . escapeshellarg($encoded);
+            $pipes = [];
+            $process = proc_open($command, [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ], $pipes, dirname(__DIR__, 4));
+            if (!is_resource($process)) {
+                throw new RuntimeException('Không thể khởi chạy worker đổi ngày đồng thời.');
+            }
+            fclose($pipes[0]);
+            $processes[] = [$process, $pipes];
+        }
+
+        $results = [];
+        foreach ($processes as [$process, $pipes]) {
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+            if ($exitCode !== 0 || $stderr !== '') {
+                throw new RuntimeException('Worker đổi ngày lỗi: ' . trim($stderr));
+            }
+            $result = json_decode($stdout, true, flags: JSON_THROW_ON_ERROR);
+            self::assertIsArray($result);
+            $results[] = $result;
+        }
+        return $results;
     }
 
     /** @param list<mixed> $parameters @return list<array<string, mixed>> */

@@ -89,6 +89,27 @@ final class InventoryDateChangeServiceTest extends TestCase
         }
     }
 
+    public function test_reschedule_supports_a_completely_non_overlapping_stay(): void
+    {
+        $oldStay = new StayPeriod((string) $this->booking['checkIn'], (string) $this->booking['checkOut']);
+        $newStay = $this->shiftedStay(10);
+        $this->pdo->beginTransaction();
+        try {
+            $result = $this->service()->reschedule(
+                (int) $this->booking['id'],
+                $this->items,
+                $oldStay,
+                $newStay,
+            );
+            self::assertSame(0, $result['kept']);
+            self::assertSame(count($this->items) * count($oldStay->nights()), $result['released']);
+            self::assertSame(count($this->items) * count($newStay->nights()), $result['activated']);
+            self::assertSame($this->expectedActiveKeys($newStay), $this->activeKeys());
+        } finally {
+            $this->pdo->rollBack();
+        }
+    }
+
     private function service(): InventoryDateChangeService
     {
         return new InventoryDateChangeService(
