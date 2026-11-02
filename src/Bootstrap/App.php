@@ -24,6 +24,8 @@ use App\Modules\Bookings\Application\PaymentGateway;
 use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
 use App\Modules\Bookings\Http\BookingController;
+use App\Modules\Bookings\Http\BookingPortalController;
+use App\Modules\Bookings\Http\BookingViewPresenter;
 use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
@@ -471,6 +473,23 @@ final class App
                 $container->get(BookingService::class),
                 $container->get(OnlinePaymentService::class),
                 $container->get(PreviewTokenSession::class),
+                $container->get(IdentitySession::class),
+                $container->get(SessionBootstrap::class),
+                $container->get(ViewRenderer::class),
+                $container->get(FlashBag::class),
+                $container->get(AppConfig::class),
+            ),
+        );
+        $container->singleton(
+            BookingViewPresenter::class,
+            static fn (Container $_): BookingViewPresenter => new BookingViewPresenter(),
+        );
+        $container->singleton(
+            BookingPortalController::class,
+            static fn (Container $container): BookingPortalController => new BookingPortalController(
+                $container->get(BookingAccessService::class),
+                $container->get(BookingModificationService::class),
+                $container->get(BookingViewPresenter::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),
                 $container->get(ViewRenderer::class),

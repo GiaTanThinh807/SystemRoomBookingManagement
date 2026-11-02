@@ -157,8 +157,10 @@ final readonly class BookingRepository
         $where = '1 = 1';
         $parameters = [];
         if ($query !== null) {
-            $where .= ' AND (dc.MaDatCho LIKE :query OR dc.EmailNguoiDat LIKE :query OR cs.TenCoSo LIKE :query)';
-            $parameters['query'] = '%' . $query . '%';
+            $where .= ' AND (dc.MaDatCho LIKE :queryCode OR dc.EmailNguoiDat LIKE :queryEmail OR cs.TenCoSo LIKE :queryProperty)';
+            $parameters['queryCode'] = '%' . $query . '%';
+            $parameters['queryEmail'] = '%' . $query . '%';
+            $parameters['queryProperty'] = '%' . $query . '%';
         }
         return $this->paginate($where, $parameters, $page, $perPage, $status);
     }

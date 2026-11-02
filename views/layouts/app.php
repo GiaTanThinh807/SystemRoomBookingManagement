@@ -10,6 +10,7 @@ declare(strict_types=1);
 /** @var string|null $currentUserRole */
 /** @var array<string, list<string>> $flashes */
 $currentUserRole = $currentUserRole ?? null;
+$activeNavigation = $activeNavigation ?? 'properties';
 $authenticated = $currentUserName !== null && $currentUserRole !== null;
 $useAppShell = $authenticated && in_array($currentUserRole, ['PARTNER', 'ADMIN'], true);
 $workspaceUrl = $currentUserRole === 'ADMIN' ? $baseUrl . '/admin/properties/review' : $baseUrl . '/partner/properties';
@@ -84,14 +85,15 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
                 <nav class="app-navigation" aria-label="Điều hướng chính">
                     <?php if ($currentUserRole === 'ADMIN'): ?>
                         <span class="app-navigation__section">Quản trị</span>
-                        <a class="is-active" href="<?= $baseUrl ?>/admin/properties/review"><svg class="app-icon"><use href="#icon-review"/></svg><span>Kiểm duyệt cơ sở</span></a>
+                        <a<?= $activeNavigation === 'properties' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/admin/properties/review"><svg class="app-icon"><use href="#icon-review"/></svg><span>Kiểm duyệt cơ sở</span></a>
+                        <a<?= $activeNavigation === 'bookings' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/admin/bookings"><svg class="app-icon"><use href="#icon-bed"/></svg><span>Hỗ trợ booking</span></a>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-users"/></svg><span>Tài khoản</span></span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-file"/></svg><span>Nhật ký hệ thống</span></span>
                     <?php else: ?>
                         <span class="app-navigation__section">Không gian đối tác</span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-grid"/></svg><span>Tổng quan</span></span>
-                        <a class="is-active" href="<?= $baseUrl ?>/partner/properties"><svg class="app-icon"><use href="#icon-building"/></svg><span>Cơ sở lưu trú</span></a>
-                        <span class="is-disabled"><svg class="app-icon"><use href="#icon-bed"/></svg><span>Đặt phòng</span></span>
+                        <a<?= $activeNavigation === 'properties' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/partner/properties"><svg class="app-icon"><use href="#icon-building"/></svg><span>Cơ sở lưu trú</span></a>
+                        <a<?= $activeNavigation === 'bookings' ? ' class="is-active"' : '' ?> href="<?= $baseUrl ?>/partner/bookings"><svg class="app-icon"><use href="#icon-bed"/></svg><span>Đặt phòng</span></a>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-users"/></svg><span>Khách hàng</span></span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-chart"/></svg><span>Doanh thu</span></span>
                         <span class="is-disabled"><svg class="app-icon"><use href="#icon-file"/></svg><span>Báo cáo</span></span>
@@ -118,7 +120,7 @@ $assetUrl = static function (string $path) use ($baseUrl, $publicPath): string {
             </div>
         </div>
     <?php else: ?>
-        <header class="site-header"><div class="container site-header__inner"><a class="brand" href="<?= $baseUrl ?>/" aria-label="StayBooking"><img class="brand__logo" src="<?= $assetUrl('/assets/images/accommodation/shared/logoNew.png') ?>" width="186" height="62" alt=""></a><nav class="site-nav" aria-label="Điều hướng công khai"><a class="nav-link" href="<?= $baseUrl ?>/#search">Tìm chỗ nghỉ</a><?php if ($authenticated): ?><span class="customer-nav-name"><?= $currentUserName ?></span><form method="post" action="<?= $baseUrl ?>/auth/logout"><input type="hidden" name="_token" value="<?= $csrfToken ?>"><button class="button button--header" type="submit">Đăng xuất</button></form><?php else: ?><a class="nav-link" href="<?= $baseUrl ?>/auth/login">Đăng nhập</a><a class="button button--header" href="<?= $baseUrl ?>/auth/register">Đăng ký</a><?php endif; ?></nav></div></header>
+        <header class="site-header"><div class="container site-header__inner"><a class="brand" href="<?= $baseUrl ?>/" aria-label="StayBooking"><img class="brand__logo" src="<?= $assetUrl('/assets/images/accommodation/shared/logoNew.png') ?>" width="186" height="62" alt=""></a><nav class="site-nav" aria-label="Điều hướng công khai"><a class="nav-link" href="<?= $baseUrl ?>/#search">Tìm chỗ nghỉ</a><?php if ($authenticated): ?><?php if ($currentUserRole === 'CUSTOMER'): ?><a class="nav-link" href="<?= $baseUrl ?>/account/bookings">Đặt chỗ của tôi</a><?php endif; ?><span class="customer-nav-name"><?= $currentUserName ?></span><form method="post" action="<?= $baseUrl ?>/auth/logout"><input type="hidden" name="_token" value="<?= $csrfToken ?>"><button class="button button--header" type="submit">Đăng xuất</button></form><?php else: ?><a class="nav-link" href="<?= $baseUrl ?>/auth/login">Đăng nhập</a><a class="button button--header" href="<?= $baseUrl ?>/auth/register">Đăng ký</a><?php endif; ?></nav></div></header>
         <?php if ($flashes !== []): ?><div class="container flash-region" aria-live="polite"><?php foreach ($flashes as $type => $messages): ?><?php foreach ($messages as $message): ?><div class="alert alert--<?= $type === 'success' ? 'success' : 'info' ?>"><?= $message ?></div><?php endforeach; ?><?php endforeach; ?></div><?php endif; ?>
         <main id="main-content" class="container page-content"><?= $content ?></main>
         <footer class="site-footer"><div class="container">StayBooking · Nền tảng đặt phòng tại TP.HCM</div></footer>
