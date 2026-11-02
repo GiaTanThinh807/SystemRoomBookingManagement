@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Modules\Bookings\Infrastructure;
 
+use App\Shared\Json\CanonicalJson;
+use App\Shared\Money\Money;
+use DateTimeImmutable;
+use DateTimeZone;
 use JsonException;
 use PDO;
 use RuntimeException;
@@ -21,6 +25,87 @@ final readonly class CancellationRepository
         $statement->execute(['code' => $code, 'customerId' => $customerId]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
         return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    /** @return array{bookingId: int, customerId: int}|null */
+    public function findByCancellationKey(string $cancellationKey): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT DatChoID AS bookingId, KhachHangID AS customerId FROM DatCho WHERE HuyIdempotencyKey=?'
+        );
+        $statement->execute([$cancellationKey]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row)
+            ? ['bookingId' => (int) $row['bookingId'], 'customerId' => (int) $row['customerId']]
+            : null;
+    }
+
+    /** @return array<string, mixed>|null */
+    public function lockForCustomer(string $code, int $customerId): ?array
+    {
+        $this->assertTransaction();
+        $statement = $this->pdo->prepare(
+            'SELECT DatChoID FROM DatCho WHERE MaDatCho=:code AND KhachHangID=:customerId FOR UPDATE'
+        );
+        $statement->execute(['code' => $code, 'customerId' => $customerId]);
+        if ($statement->fetchColumn() === false) {
+            return null;
+        }
+        return $this->findForCustomer($code, $customerId);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function lockById(int $bookingId): ?array
+    {
+        $this->assertTransaction();
+        $statement = $this->pdo->prepare('SELECT MaDatCho, KhachHangID FROM DatCho WHERE DatChoID=? FOR UPDATE');
+        $statement->execute([$bookingId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row)
+            ? $this->findForCustomer((string) $row['MaDatCho'], (int) $row['KhachHangID'])
+            : null;
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    public function markCancelled(
+        int $bookingId,
+        string $cancellationKey,
+        int $actorId,
+        string $reason,
+        Money $fee,
+        array $snapshot,
+        DateTimeImmutable $at,
+    ): void {
+        $statement = $this->pdo->prepare(
+            "UPDATE DatCho SET TrangThai='CANCELLED', HuyIdempotencyKey=:cancellationKey,
+                    NguoiHuyID=:actorId, HuyLuc=:cancelledAt, LyDoHuy=:reason,
+                    PhiHuy=:fee, SoTienHoan=0, TinhHuySnapshotJSON=:snapshot
+             WHERE DatChoID=:bookingId AND TrangThai='CONFIRMED' AND HuyIdempotencyKey IS NULL"
+        );
+        $statement->execute([
+            'cancellationKey' => $cancellationKey,
+            'actorId' => $actorId,
+            'cancelledAt' => $at->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u'),
+            'reason' => $reason,
+            'fee' => $fee->decimal(),
+            'snapshot' => CanonicalJson::encode($snapshot),
+            'bookingId' => $bookingId,
+        ]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Không thể chuyển booking sang CANCELLED.');
+        }
+    }
+
+    public function markRefunded(int $bookingId, Money $amount): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE DatCho SET SoTienHoan=:amount
+             WHERE DatChoID=:bookingId AND TrangThai='CANCELLED' AND SoTienHoan=0"
+        );
+        $statement->execute(['amount' => $amount->decimal(), 'bookingId' => $bookingId]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Không thể ghi số tiền hoàn thành công vào booking.');
+        }
     }
 
     private function contextSql(bool $lock): string
@@ -103,5 +188,12 @@ final readonly class CancellationRepository
             throw new RuntimeException('Snapshot hủy phải là object.');
         }
         return $value;
+    }
+
+    private function assertTransaction(): void
+    {
+        if (!$this->pdo->inTransaction()) {
+            throw new RuntimeException('Booking hủy chỉ được khóa trong transaction.');
+        }
     }
 }

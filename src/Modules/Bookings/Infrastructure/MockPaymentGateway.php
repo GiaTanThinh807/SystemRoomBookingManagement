@@ -24,6 +24,8 @@ final readonly class MockPaymentGateway implements PaymentGateway
         return new PaymentGatewayResult(
             PaymentGatewayResult::SUCCESS,
             'MOCK-REFUND-' . strtoupper(substr(hash('sha256', $request->idempotencyKey), 0, 20)),
+            null,
+            $request->amount,
         );
     }
 

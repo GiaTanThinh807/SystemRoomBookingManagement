@@ -20,6 +20,7 @@ use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingService;
 use App\Modules\Bookings\Application\CancellationFeeService;
 use App\Modules\Bookings\Application\CancellationQuoteService;
+use App\Modules\Bookings\Application\CancellationService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
 use App\Modules\Bookings\Application\PaymentGateway;
@@ -423,6 +424,20 @@ final class App
             static fn (Container $container): CancellationQuoteService => new CancellationQuoteService(
                 $container->get(CancellationRepository::class),
                 $container->get(CancellationFeeService::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            CancellationService::class,
+            static fn (Container $container): CancellationService => new CancellationService(
+                $container->get(PDO::class),
+                $container->get(CancellationRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(CancellationFeeService::class),
+                $container->get(InventoryReservationService::class),
+                $container->get(PaymentGateway::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
                 $container->get(ClockInterface::class),
             ),
         );

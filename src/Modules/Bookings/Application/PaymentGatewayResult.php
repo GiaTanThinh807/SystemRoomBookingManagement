@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Bookings\Application;
 
+use App\Shared\Money\Money;
 use InvalidArgumentException;
 
 final readonly class PaymentGatewayResult
@@ -16,6 +17,7 @@ final readonly class PaymentGatewayResult
         public string $status,
         public ?string $providerReference = null,
         public ?string $errorCode = null,
+        public ?Money $amount = null,
     ) {
         if (!in_array($this->status, [self::SUCCESS, self::FAILED, self::TIMEOUT], true)) {
             throw new InvalidArgumentException('Kết quả gateway không hợp lệ.');
