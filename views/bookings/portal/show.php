@@ -50,6 +50,34 @@ foreach ($waivers as $waiver) {
         </section>
 
         <?php if ($editable): ?>
+        <?php if ($booking['paymentTiming'] === 'PAY_AT_PROPERTY'): ?>
+        <section class="booking-card booking-date-change-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-calendar"/></svg></span><div><h2>Đổi ngày lưu trú</h2><p>Hệ thống sẽ tính lại giá, chính sách và tồn phòng hiện tại trước khi bạn xác nhận.</p></div></div>
+            <form class="booking-date-form" method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/date-change-preview">
+                <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                <div class="field-grid"><label class="field"><span>Ngày nhận phòng mới</span><input type="date" name="checkIn" value="<?= $dateChangeQuote['checkIn'] ?? $booking['checkIn'] ?>" required></label><label class="field"><span>Ngày trả phòng mới</span><input type="date" name="checkOut" value="<?= $dateChangeQuote['checkOut'] ?? $booking['checkOut'] ?>" required></label></div>
+                <button class="button button--secondary" type="submit">Kiểm tra giá và phòng trống</button>
+            </form>
+            <?php if ($dateChangeQuote !== null): ?>
+                <?php $dateChangeDelta = (float) $dateChangeQuote['newTotal'] - (float) $dateChangeQuote['oldTotal']; ?>
+                <div class="date-change-quote">
+                    <div><span>Kỳ lưu trú mới</span><strong><?= $date($dateChangeQuote['checkIn']) ?> → <?= $date($dateChangeQuote['checkOut']) ?></strong></div>
+                    <div><span>Tổng hiện tại</span><strong><?= $money($dateChangeQuote['oldTotal']) ?></strong></div>
+                    <div><span>Tổng mới</span><strong><?= $money($dateChangeQuote['newTotal']) ?></strong></div>
+                    <div><span>Chênh lệch</span><strong class="<?= $dateChangeDelta > 0 ? 'is-increase' : 'is-decrease' ?>"><?= $dateChangeDelta > 0 ? '+' : '' ?><?= $money($dateChangeDelta) ?></strong></div>
+                </div>
+                <p class="date-change-expiry">Báo giá có hiệu lực đến <?= date('d/m/Y H:i', strtotime((string) $dateChangeQuote['validUntil'])) ?> và sẽ được kiểm tra lại khi xác nhận.</p>
+                <form method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/date-change">
+                    <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                    <input type="hidden" name="checkIn" value="<?= $dateChangeQuote['checkIn'] ?>">
+                    <input type="hidden" name="checkOut" value="<?= $dateChangeQuote['checkOut'] ?>">
+                    <input type="hidden" name="quoteFingerprint" value="<?= $dateChangeQuote['fingerprint'] ?>">
+                    <button class="button button--primary" type="submit">Xác nhận đổi ngày</button>
+                </form>
+            <?php endif; ?>
+        </section>
+        <?php endif; ?>
+
         <section class="booking-card booking-edit-card">
             <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-edit"/></svg></span><div><h2>Sửa thông tin khách</h2><p>Chỉ sửa liên hệ, yêu cầu đặc biệt và tên khách trước giờ nhận phòng.</p></div></div>
             <form class="booking-edit-form" method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/guest-details">
@@ -58,7 +86,7 @@ foreach ($waivers as $waiver) {
                 <label class="field"><span>Số điện thoại</span><input name="bookerPhone" value="<?= $booking['booker']['phone'] ?>" maxlength="20" required></label>
                 <label class="field"><span>Yêu cầu đặc biệt</span><textarea name="specialRequest" rows="3" maxlength="1000"><?= $booking['booker']['specialRequest'] ?? '' ?></textarea></label>
                 <?php foreach ($booking['items'] as $item): ?><fieldset class="booking-guest-fields"><legend><?= $item['roomTypeName'] ?> · Phòng <?= (int) $item['roomOrder'] ?></legend><p>Giữ nguyên <?= count($item['guests']) ?> khách; biểu mẫu không cho đổi số lượng hay độ tuổi.</p><?php foreach ($item['guests'] as $index => $guest): ?><label class="field"><span><?= $guestType[$guest['type']] ?? $guest['type'] ?> <?= $index + 1 ?><?= $guest['age'] !== null ? ' · ' . (int) $guest['age'] . ' tuổi' : '' ?></span><input name="guestNames[<?= (int) $item['id'] ?>][]" value="<?= $guest['name'] ?>" maxlength="150" required></label><?php endforeach; ?></fieldset><?php endforeach; ?>
-                <div class="booking-edit-note"><svg class="app-icon"><use href="#icon-review"/></svg><span>Giá, chính sách, ngày ở, số khách và tồn phòng sẽ không thay đổi.</span></div>
+                <div class="booking-edit-note"><svg class="app-icon"><use href="#icon-review"/></svg><span>Biểu mẫu này chỉ sửa thông tin khách; giá, ngày ở và tồn phòng không thay đổi.</span></div>
                 <button class="button button--primary" type="submit">Lưu thông tin khách</button>
             </form>
         </section>

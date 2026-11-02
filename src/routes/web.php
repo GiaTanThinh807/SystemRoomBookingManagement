@@ -132,6 +132,8 @@ return static function (Router $router, Container $container): void {
         $customerWrite,
         'account.bookings.update',
     );
+    $router->post('/account/bookings/{code}/date-change-preview', $bookingPortal->customerDateChangePreview(...), $customerWrite, 'account.bookings.date-change-preview');
+    $router->post('/account/bookings/{code}/date-change', $bookingPortal->customerDateChange(...), $customerWrite, 'account.bookings.date-change');
     $router->post('/account/bookings/{code}/cancel-preview', $bookingPortal->customerCancelPreview(...), $customerWrite, 'account.bookings.cancel-preview');
     $router->post('/account/bookings/{code}/cancel', $bookingPortal->customerCancel(...), $customerWrite, 'account.bookings.cancel');
     $router->post('/account/bookings/{code}/waiver', $bookingPortal->customerWaiver(...), $customerWrite, 'account.bookings.waiver');

@@ -237,6 +237,45 @@ final class BookingPortalHttpFlowTest extends TestCase
         self::assertSame('CONFIRMED', $this->scalar('SELECT TrangThai FROM DatCho WHERE DatChoID=' . (int) $booking['id']));
     }
 
+    public function test_customer_previews_date_change_through_http_without_mutating_booking(): void
+    {
+        $booking = $this->pdo->query(
+            "SELECT dc.DatChoID id, dc.MaDatCho code, dc.KhachHangID customerId,
+                    dc.NgayNhanPhong checkIn, dc.NgayTraPhong checkOut, dc.TongTien grandTotal
+             FROM DatCho dc INNER JOIN ThanhToan tt ON tt.DatChoID=dc.DatChoID
+             WHERE dc.TrangThai='CONFIRMED' AND dc.ThoiDiemThanhToan='PAY_AT_PROPERTY'
+               AND tt.TrangThai='NOT_TRACKED' AND dc.NgayNhanPhong>CURRENT_DATE()
+             ORDER BY dc.NgayNhanPhong DESC, dc.DatChoID DESC LIMIT 1"
+        )->fetch(PDO::FETCH_ASSOC);
+        self::assertIsArray($booking);
+        $this->signIn((int) $booking['customerId']);
+
+        $detail = $this->app->handle(new Request(
+            'GET', '/account/bookings/' . $booking['code'], requestId: $this->requestId('date-change-detail'),
+        ));
+        self::assertSame(200, $detail->status());
+        self::assertStringContainsString('/date-change-preview', $detail->body());
+
+        $checkIn = (new \DateTimeImmutable((string) $booking['checkIn']))->modify('+1 day')->format('Y-m-d');
+        $checkOut = (new \DateTimeImmutable((string) $booking['checkOut']))->modify('+1 day')->format('Y-m-d');
+        $preview = $this->app->handle(new Request(
+            'POST',
+            '/account/bookings/' . $booking['code'] . '/date-change-preview',
+            body: ['_token' => $this->session->csrfToken(), 'checkIn' => $checkIn, 'checkOut' => $checkOut],
+            requestId: $this->requestId('date-change-preview'),
+            clientIp: '127.0.0.1',
+        ));
+        self::assertSame(200, $preview->status());
+        self::assertStringContainsString('Xác nhận đổi ngày', $preview->body());
+        self::assertStringContainsString('name="quoteFingerprint"', $preview->body());
+        self::assertSame(
+            $booking['checkIn'] . '|' . $booking['checkOut'] . '|' . $booking['grandTotal'],
+            $this->scalar(
+                "SELECT CONCAT(NgayNhanPhong,'|',NgayTraPhong,'|',TongTien) FROM DatCho WHERE DatChoID=" . (int) $booking['id'],
+            ),
+        );
+    }
+
     /** @return array<string, mixed> */
     private function futureConfirmedBooking(): array
     {

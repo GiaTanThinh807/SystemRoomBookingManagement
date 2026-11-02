@@ -17,6 +17,10 @@ use App\Modules\Bookings\Application\CancellationCommand;
 use App\Modules\Bookings\Application\CancellationQuote;
 use App\Modules\Bookings\Application\CancellationQuoteService;
 use App\Modules\Bookings\Application\CancellationService;
+use App\Modules\Bookings\Application\DateChangeCommand;
+use App\Modules\Bookings\Application\DateChangeQuote;
+use App\Modules\Bookings\Application\DateChangeQuoteService;
+use App\Modules\Bookings\Application\DateChangeService;
 use App\Modules\Bookings\Application\WaiverDecision;
 use App\Modules\Bookings\Application\WaiverService;
 use App\Modules\Bookings\Domain\Booking;
@@ -27,6 +31,7 @@ use App\Shared\Http\FlashBag;
 use App\Shared\Http\NotFoundHttpException;
 use App\Shared\Http\ValidationHttpException;
 use App\Shared\Http\ViewRenderer;
+use App\Shared\Contract\StayPeriod;
 use DomainException;
 use InvalidArgumentException;
 
@@ -35,6 +40,8 @@ final readonly class BookingPortalController
     public function __construct(
         private BookingAccessService $access,
         private BookingModificationService $modifications,
+        private DateChangeQuoteService $dateChangeQuotes,
+        private DateChangeService $dateChanges,
         private CancellationQuoteService $cancellationQuotes,
         private CancellationService $cancellations,
         private WaiverService $waivers,
@@ -175,6 +182,50 @@ final readonly class BookingPortalController
         return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
     }
 
+    public function customerDateChangePreview(Request $request): Response
+    {
+        $code = $this->code($request);
+        $user = $this->user();
+        $booking = $this->lookup(fn (): ?Booking => $this->access->customerBooking($code, $user->id));
+        try {
+            $stay = new StayPeriod(
+                $this->bodyString($request, 'checkIn'),
+                $this->bodyString($request, 'checkOut'),
+            );
+            $quote = $this->dateChangeQuotes->preview($code, $user->id, $stay);
+            return $this->customerDetail($booking, $quote);
+        } catch (BookingException|InvalidArgumentException $exception) {
+            $this->flash->add('info', $exception->getMessage());
+            return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
+        }
+    }
+
+    public function customerDateChange(Request $request): Response
+    {
+        $code = $this->code($request);
+        try {
+            $booking = $this->dateChanges->change(
+                $code,
+                $this->user()->id,
+                DateChangeCommand::fromInput($request->body),
+                $request->requestId,
+                $request->clientIp,
+            );
+            $this->flash->add(
+                'success',
+                'Đã đổi kỳ lưu trú sang ' . $booking->checkIn . ' – ' . $booking->checkOut . '.',
+            );
+        } catch (BookingException $exception) {
+            if ($exception->errorCode === 'BOOKING_NOT_FOUND') {
+                throw new NotFoundHttpException();
+            }
+            $this->flash->add('info', $exception->getMessage());
+        } catch (InvalidArgumentException $exception) {
+            $this->flash->add('info', $exception->getMessage());
+        }
+        return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
+    }
+
     public function partnerIndex(Request $request): Response
     {
         $organization = $this->organization();
@@ -293,6 +344,7 @@ final readonly class BookingPortalController
         bool $editable,
         ?CancellationQuote $cancellationQuote = null,
         array $waivers = [],
+        ?DateChangeQuote $dateChangeQuote = null,
     ): Response
     {
         return $this->view('bookings/portal/show', [
@@ -308,12 +360,20 @@ final readonly class BookingPortalController
                 'items' => $cancellationQuote->items,
             ],
             'cancellationKey' => $cancellationQuote === null ? null : $this->uuid(),
+            'dateChangeQuote' => $dateChangeQuote === null ? null : [
+                'checkIn' => $dateChangeQuote->stay->checkIn,
+                'checkOut' => $dateChangeQuote->stay->checkOut,
+                'oldTotal' => $dateChangeQuote->oldTotal->decimal(),
+                'newTotal' => $dateChangeQuote->newTotal->decimal(),
+                'fingerprint' => $dateChangeQuote->fingerprint,
+                'validUntil' => $dateChangeQuote->validUntil->format(DATE_ATOM),
+            ],
             'waivers' => $waivers,
             'activeNavigation' => 'bookings',
         ])->withHeader('Cache-Control', 'no-store, private');
     }
 
-    private function customerDetail(Booking $booking): Response
+    private function customerDetail(Booking $booking, ?DateChangeQuote $dateChangeQuote = null): Response
     {
         $quote = null;
         if ($booking->status === 'CONFIRMED') {
@@ -329,6 +389,7 @@ final readonly class BookingPortalController
             true,
             $quote,
             $this->waivers->forCustomerBooking($booking->id, $this->user()->id),
+            $dateChangeQuote,
         );
     }
 

@@ -23,6 +23,8 @@ use App\Modules\Bookings\Application\CancellationFinalizer;
 use App\Modules\Bookings\Application\CancellationQuoteService;
 use App\Modules\Bookings\Application\CancellationRefundService;
 use App\Modules\Bookings\Application\CancellationService;
+use App\Modules\Bookings\Application\DateChangeQuoteService;
+use App\Modules\Bookings\Application\DateChangeService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
 use App\Modules\Bookings\Application\PaymentGateway;
@@ -36,6 +38,7 @@ use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
 use App\Modules\Bookings\Infrastructure\CancellationRepository;
+use App\Modules\Bookings\Infrastructure\DateChangeRepository;
 use App\Modules\Bookings\Infrastructure\MockPaymentGateway;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\PreviewRepository;
@@ -65,6 +68,7 @@ use App\Modules\Identity\Infrastructure\PartnerMembershipRepository;
 use App\Modules\Identity\Infrastructure\UserRepository;
 use App\Modules\Inventory\Application\AvailabilityReader;
 use App\Modules\Inventory\Application\InventoryCalendarService;
+use App\Modules\Inventory\Application\InventoryDateChangeService;
 use App\Modules\Inventory\Application\InventoryReservationService;
 use App\Modules\Inventory\Application\InventoryReconciliationService;
 use App\Modules\Inventory\Application\TransactionalInventoryReservationService;
@@ -511,6 +515,38 @@ final class App
             ),
         );
         $container->singleton(
+            DateChangeRepository::class,
+            static fn (Container $container): DateChangeRepository => new DateChangeRepository($container->get(PDO::class)),
+        );
+        $container->singleton(
+            DateChangeQuoteService::class,
+            static fn (Container $container): DateChangeQuoteService => new DateChangeQuoteService(
+                $container->get(DateChangeRepository::class),
+                $container->get(PriceCalculator::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            InventoryDateChangeService::class,
+            static fn (Container $container): InventoryDateChangeService => new InventoryDateChangeService(
+                $container->get(PDO::class),
+                $container->get(InventoryRepository::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
+            DateChangeService::class,
+            static fn (Container $container): DateChangeService => new DateChangeService(
+                $container->get(DateChangeRepository::class),
+                $container->get(BookingRepository::class),
+                $container->get(PaymentRepository::class),
+                $container->get(DateChangeQuoteService::class),
+                $container->get(InventoryDateChangeService::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+            ),
+        );
+        $container->singleton(
             BookingService::class,
             static fn (Container $container): BookingService => new BookingService(
                 $container->get(PreviewRepository::class),
@@ -572,6 +608,8 @@ final class App
             static fn (Container $container): BookingPortalController => new BookingPortalController(
                 $container->get(BookingAccessService::class),
                 $container->get(BookingModificationService::class),
+                $container->get(DateChangeQuoteService::class),
+                $container->get(DateChangeService::class),
                 $container->get(CancellationQuoteService::class),
                 $container->get(CancellationService::class),
                 $container->get(WaiverService::class),
