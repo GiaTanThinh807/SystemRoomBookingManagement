@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+/** @var array<string, mixed> $booking */
+$statusLabels = ['PENDING_PAYMENT' => 'Chờ thanh toán', 'CONFIRMED' => 'Đã xác nhận', 'PAYMENT_FAILED' => 'Thanh toán thất bại', 'CANCELLED' => 'Đã hủy', 'NO_SHOW' => 'Không đến', 'COMPLETED' => 'Hoàn tất'];
+$mealLabels = ['ROOM_ONLY' => 'Không gồm bữa sáng', 'BREAKFAST_INCLUDED' => 'Gồm bữa sáng'];
+$guestType = ['ADULT' => 'Người lớn', 'CHILD' => 'Trẻ em', 'GUEST' => 'Khách'];
+$money = static fn (mixed $amount): string => number_format((float) $amount, 0, ',', '.') . ' ₫';
+$date = static fn (mixed $value): string => date('d/m/Y', strtotime((string) $value));
+?>
+<nav class="resource-breadcrumb"><a href="<?= $baseUrl . $listPath ?>">Danh sách booking</a><svg class="app-icon"><use href="#icon-chevron"/></svg><span><?= $booking['code'] ?></span></nav>
+
+<header class="booking-detail-hero">
+    <div><span class="booking-eyebrow">Mã booking</span><h1><?= $booking['code'] ?></h1><p>Được tạo lúc <?= date('d/m/Y H:i', strtotime((string) $booking['createdAt'])) ?> · Dữ liệu bên dưới là snapshot đã chốt khi đặt.</p></div>
+    <span class="booking-status booking-status--<?= strtolower((string) $booking['status']) ?>"><i></i><?= $statusLabels[$booking['status']] ?? $booking['status'] ?></span>
+</header>
+
+<div class="booking-detail-layout">
+    <main class="booking-detail-main">
+        <section class="booking-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-building"/></svg></span><div><h2><?= $booking['property']['name'] ?></h2><p><?= $booking['property']['address'] ?></p></div></div>
+            <div class="booking-stay-grid"><div><span>Nhận phòng</span><strong><?= $date($booking['checkIn']) ?></strong></div><div><span>Trả phòng</span><strong><?= $date($booking['checkOut']) ?></strong></div><div><span>Thanh toán</span><strong><?= $booking['paymentTiming'] === 'PAY_ONLINE' ? 'Trực tuyến' : 'Tại cơ sở' ?></strong></div></div>
+        </section>
+
+        <section class="booking-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-bed"/></svg></span><div><h2>Phòng và điều kiện đã đặt</h2><p>Tên phòng, giá và chính sách lấy từ snapshot booking, không lấy lại catalog hiện tại.</p></div></div>
+            <div class="booking-room-list">
+            <?php foreach ($booking['items'] as $item): ?>
+                <article class="booking-room-card">
+                    <header><div><span>Phòng <?= (int) $item['roomOrder'] ?></span><h3><?= $item['roomTypeName'] ?></h3><p><?= $item['productName'] ?> · <?= $mealLabels[$item['mealType']] ?? $item['mealType'] ?></p></div><strong><?= $money($item['grandTotal']) ?></strong></header>
+                    <div class="booking-snapshot-grid"><div><span>Hình thức trả</span><strong><?= ($item['conditions']['paymentTiming'] ?? $booking['paymentTiming']) === 'PAY_ONLINE' ? 'Trực tuyến' : 'Tại cơ sở' ?></strong></div><div><span>Phí hủy tại lúc đặt</span><strong><?= $money($item['cancellation']['absoluteFeeAtBooking'] ?? 0) ?></strong></div><div><span>Múi giờ chính sách</span><strong><?= $item['cancellation']['timezone'] ?? '—' ?></strong></div></div>
+                    <div class="booking-night-list"><div class="booking-night-list__head"><span>Đêm lưu trú</span><span>Giá gốc</span><span>Giảm</span><span>Thành tiền</span></div><?php foreach ($item['nights'] as $night): ?><div><span><?= $date($night['stayDate']) ?></span><span><?= $money($night['basePrice']) ?></span><span>-<?= $money($night['discount']) ?></span><strong><?= $money($night['total']) ?></strong></div><?php endforeach; ?></div>
+                </article>
+            <?php endforeach; ?>
+            </div>
+        </section>
+
+        <section class="booking-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-users"/></svg></span><div><h2>Khách lưu trú</h2><p>Số khách và độ tuổi là snapshot bất biến trong luồng sửa đơn giản.</p></div></div>
+            <?php foreach ($booking['items'] as $item): ?><div class="booking-guests"><h3><?= $item['roomTypeName'] ?> · Phòng <?= (int) $item['roomOrder'] ?></h3><?php foreach ($item['guests'] as $index => $guest): ?><div><span class="booking-guest-index"><?= $index + 1 ?></span><span><strong><?= $guest['name'] !== '' ? $guest['name'] : 'Chưa nhập tên' ?></strong><small><?= $guestType[$guest['type']] ?? $guest['type'] ?><?= $guest['age'] !== null ? ' · ' . (int) $guest['age'] . ' tuổi' : '' ?></small></span></div><?php endforeach; ?></div><?php endforeach; ?>
+        </section>
+
+        <?php if ($editable): ?>
+        <section class="booking-card booking-edit-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-edit"/></svg></span><div><h2>Sửa thông tin khách</h2><p>Chỉ sửa liên hệ, yêu cầu đặc biệt và tên khách trước giờ nhận phòng.</p></div></div>
+            <form class="booking-edit-form" method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/guest-details">
+                <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                <div class="field-grid"><label class="field"><span>Họ tên người đặt</span><input name="bookerName" value="<?= $booking['booker']['name'] ?>" maxlength="150" required></label><label class="field"><span>Email</span><input type="email" name="bookerEmail" value="<?= $booking['booker']['email'] ?>" maxlength="190" required></label></div>
+                <label class="field"><span>Số điện thoại</span><input name="bookerPhone" value="<?= $booking['booker']['phone'] ?>" maxlength="20" required></label>
+                <label class="field"><span>Yêu cầu đặc biệt</span><textarea name="specialRequest" rows="3" maxlength="1000"><?= $booking['booker']['specialRequest'] ?? '' ?></textarea></label>
+                <?php foreach ($booking['items'] as $item): ?><fieldset class="booking-guest-fields"><legend><?= $item['roomTypeName'] ?> · Phòng <?= (int) $item['roomOrder'] ?></legend><p>Giữ nguyên <?= count($item['guests']) ?> khách; biểu mẫu không cho đổi số lượng hay độ tuổi.</p><?php foreach ($item['guests'] as $index => $guest): ?><label class="field"><span><?= $guestType[$guest['type']] ?? $guest['type'] ?> <?= $index + 1 ?><?= $guest['age'] !== null ? ' · ' . (int) $guest['age'] . ' tuổi' : '' ?></span><input name="guestNames[<?= (int) $item['id'] ?>][]" value="<?= $guest['name'] ?>" maxlength="150" required></label><?php endforeach; ?></fieldset><?php endforeach; ?>
+                <div class="booking-edit-note"><svg class="app-icon"><use href="#icon-review"/></svg><span>Giá, chính sách, ngày ở, số khách và tồn phòng sẽ không thay đổi.</span></div>
+                <button class="button button--primary" type="submit">Lưu thông tin khách</button>
+            </form>
+        </section>
+        <?php endif; ?>
+    </main>
+
+    <aside class="booking-summary-card">
+        <span>Tổng giá booking</span><strong><?= $money($booking['grandTotal']) ?></strong><p><?= count($booking['items']) ?> phòng · <?= $date($booking['checkIn']) ?> → <?= $date($booking['checkOut']) ?></p>
+        <hr>
+        <dl><div><dt>Người đặt</dt><dd><?= $booking['booker']['name'] ?></dd></div><div><dt>Email</dt><dd><?= $booking['booker']['email'] ?></dd></div><div><dt>Điện thoại</dt><dd><?= $booking['booker']['phone'] ?></dd></div><?php if ($booking['booker']['specialRequest'] !== null): ?><div><dt>Yêu cầu đặc biệt</dt><dd><?= $booking['booker']['specialRequest'] ?></dd></div><?php endif; ?></dl>
+        <a class="button button--secondary" href="<?= $baseUrl . $listPath ?>">Quay lại danh sách</a>
+    </aside>
+</div>

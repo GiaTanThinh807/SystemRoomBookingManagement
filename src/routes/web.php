@@ -20,6 +20,7 @@ use App\Modules\Identity\Infrastructure\IdentitySession;
 use App\Modules\Identity\Domain\UserAccount;
 use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Http\BookingController;
+use App\Modules\Bookings\Http\BookingPortalController;
 use App\Modules\Commercial\Http\PartnerCommercialController;
 use App\Modules\Inventory\Http\PartnerInventoryController;
 use App\Modules\Properties\Http\AdminPropertyController;
@@ -122,10 +123,22 @@ return static function (Router $router, Container $container): void {
         $customerRead,
         'bookings.confirmation',
     );
+    $bookingPortal = $container->get(BookingPortalController::class);
+    $router->get('/account/bookings', $bookingPortal->customerIndex(...), $customerRead, 'account.bookings.index');
+    $router->get('/account/bookings/{code}', $bookingPortal->customerShow(...), $customerRead, 'account.bookings.show');
+    $router->post(
+        '/account/bookings/{code}/guest-details',
+        $bookingPortal->customerUpdate(...),
+        $customerWrite,
+        'account.bookings.update',
+    );
 
     $partner = $container->get(PartnerPropertyController::class);
     $partnerRead = [$requestId, $auth, $partnerRole, $partnerContext];
     $partnerWrite = [$requestId, $csrf, $auth, $partnerRole, $partnerContext];
+    $partnerBookingRead = [$requestId, $auth, $partnerRole];
+    $router->get('/partner/bookings', $bookingPortal->partnerIndex(...), $partnerBookingRead, 'partner.bookings.index');
+    $router->get('/partner/bookings/{code}', $bookingPortal->partnerShow(...), $partnerBookingRead, 'partner.bookings.show');
     $router->get('/partner/properties', $partner->index(...), $partnerRead, 'partner.properties.index');
     $router->get('/partner/properties/create', $partner->create(...), $partnerRead, 'partner.properties.create');
     $router->post('/partner/properties', $partner->store(...), $partnerWrite, 'partner.properties.store');
@@ -216,6 +229,8 @@ return static function (Router $router, Container $container): void {
     $admin = $container->get(AdminPropertyController::class);
     $adminRead = [$requestId, $auth, $adminRole];
     $adminWrite = [$requestId, $csrf, $auth, $adminRole];
+    $router->get('/admin/bookings', $bookingPortal->adminIndex(...), $adminRead, 'admin.bookings.index');
+    $router->get('/admin/bookings/{code}', $bookingPortal->adminShow(...), $adminRead, 'admin.bookings.show');
     $router->get('/admin/properties/review', $admin->index(...), $adminRead, 'admin.properties.index');
     $router->get('/admin/properties/{propertyId}', $admin->show(...), $adminRead, 'admin.properties.show');
     $router->post('/admin/properties/{propertyId}/review', $admin->review(...), $adminWrite, 'admin.properties.review');

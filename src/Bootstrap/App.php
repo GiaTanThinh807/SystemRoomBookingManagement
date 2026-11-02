@@ -15,6 +15,8 @@ use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
 use App\Http\Middleware\PartnerContextMiddleware;
 use App\Http\Middleware\RequestIdMiddleware;
+use App\Modules\Bookings\Application\BookingAccessService;
+use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
@@ -22,6 +24,8 @@ use App\Modules\Bookings\Application\PaymentGateway;
 use App\Modules\Bookings\Application\PreviewService;
 use App\Modules\Bookings\Application\PreviewSnapshotFactory;
 use App\Modules\Bookings\Http\BookingController;
+use App\Modules\Bookings\Http\BookingPortalController;
+use App\Modules\Bookings\Http\BookingViewPresenter;
 use App\Modules\Bookings\Http\PreviewController;
 use App\Modules\Bookings\Infrastructure\BookingCodeGenerator;
 use App\Modules\Bookings\Infrastructure\BookingRepository;
@@ -407,6 +411,23 @@ final class App
             static fn (Container $_): BookingCodeGenerator => new BookingCodeGenerator(),
         );
         $container->singleton(
+            BookingAccessService::class,
+            static fn (Container $container): BookingAccessService => new BookingAccessService(
+                $container->get(BookingRepository::class),
+                $container->get(AuditTrail::class),
+                $container->get(TransactionManager::class),
+            ),
+        );
+        $container->singleton(
+            BookingModificationService::class,
+            static fn (Container $container): BookingModificationService => new BookingModificationService(
+                $container->get(BookingRepository::class),
+                $container->get(TransactionManager::class),
+                $container->get(AuditTrail::class),
+                $container->get(ClockInterface::class),
+            ),
+        );
+        $container->singleton(
             BookingService::class,
             static fn (Container $container): BookingService => new BookingService(
                 $container->get(PreviewRepository::class),
@@ -452,6 +473,23 @@ final class App
                 $container->get(BookingService::class),
                 $container->get(OnlinePaymentService::class),
                 $container->get(PreviewTokenSession::class),
+                $container->get(IdentitySession::class),
+                $container->get(SessionBootstrap::class),
+                $container->get(ViewRenderer::class),
+                $container->get(FlashBag::class),
+                $container->get(AppConfig::class),
+            ),
+        );
+        $container->singleton(
+            BookingViewPresenter::class,
+            static fn (Container $_): BookingViewPresenter => new BookingViewPresenter(),
+        );
+        $container->singleton(
+            BookingPortalController::class,
+            static fn (Container $container): BookingPortalController => new BookingPortalController(
+                $container->get(BookingAccessService::class),
+                $container->get(BookingModificationService::class),
+                $container->get(BookingViewPresenter::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),
                 $container->get(ViewRenderer::class),
