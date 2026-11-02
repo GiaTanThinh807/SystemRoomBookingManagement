@@ -13,6 +13,12 @@ use App\Modules\Bookings\Application\BookingException;
 use App\Modules\Bookings\Application\BookingGuestDetailsRequest;
 use App\Modules\Bookings\Application\BookingModificationService;
 use App\Modules\Bookings\Application\BookingListPage;
+use App\Modules\Bookings\Application\CancellationCommand;
+use App\Modules\Bookings\Application\CancellationQuote;
+use App\Modules\Bookings\Application\CancellationQuoteService;
+use App\Modules\Bookings\Application\CancellationService;
+use App\Modules\Bookings\Application\WaiverDecision;
+use App\Modules\Bookings\Application\WaiverService;
 use App\Modules\Bookings\Domain\Booking;
 use App\Modules\Identity\Domain\CurrentUser;
 use App\Modules\Identity\Domain\OrganizationContext;
@@ -29,6 +35,9 @@ final readonly class BookingPortalController
     public function __construct(
         private BookingAccessService $access,
         private BookingModificationService $modifications,
+        private CancellationQuoteService $cancellationQuotes,
+        private CancellationService $cancellations,
+        private WaiverService $waivers,
         private BookingViewPresenter $presenter,
         private IdentitySession $identity,
         private SessionBootstrap $session,
@@ -63,7 +72,84 @@ final readonly class BookingPortalController
             $this->code($request),
             $this->user()->id,
         ));
-        return $this->detailView($booking, '/account/bookings', true);
+        return $this->customerDetail($booking);
+    }
+
+    public function customerCancelPreview(Request $request): Response
+    {
+        $booking = $this->lookup(fn (): ?Booking => $this->access->customerBooking(
+            $this->code($request),
+            $this->user()->id,
+        ));
+        return $this->customerDetail($booking);
+    }
+
+    public function customerCancel(Request $request): Response
+    {
+        $code = $this->code($request);
+        try {
+            $receipt = $this->cancellations->cancel(
+                $code,
+                $this->user()->id,
+                CancellationCommand::fromInput($request->body),
+                $request->clientIp,
+            );
+            $this->flash->add(
+                'success',
+                'Đã hủy booking. Phí hủy: ' . $receipt->fee->decimal()
+                . ' ₫; trạng thái hoàn tiền: ' . $receipt->refundStatus . '.',
+            );
+        } catch (BookingException $exception) {
+            if ($exception->errorCode === 'BOOKING_NOT_FOUND') {
+                throw new NotFoundHttpException();
+            }
+            $this->flash->add('info', $exception->getMessage());
+        } catch (InvalidArgumentException $exception) {
+            $this->flash->add('info', $exception->getMessage());
+        }
+        return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
+    }
+
+    public function customerWaiver(Request $request): Response
+    {
+        $code = $this->code($request);
+        try {
+            $this->waivers->request(
+                $code,
+                $this->user()->id,
+                $this->bodyString($request, 'reason'),
+                $request->requestId,
+                $request->clientIp,
+            );
+            $this->flash->add('success', 'Đã gửi yêu cầu miễn phí hủy đến cơ sở lưu trú.');
+        } catch (BookingException $exception) {
+            if ($exception->errorCode === 'BOOKING_NOT_FOUND') {
+                throw new NotFoundHttpException();
+            }
+            $this->flash->add('info', $exception->getMessage());
+        }
+        return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
+    }
+
+    public function customerWithdrawWaiver(Request $request): Response
+    {
+        $code = $this->code($request);
+        try {
+            $this->waivers->withdraw(
+                $code,
+                $this->user()->id,
+                $this->positiveInt($request, 'waiverId'),
+                $request->requestId,
+                $request->clientIp,
+            );
+            $this->flash->add('success', 'Đã rút yêu cầu miễn phí hủy.');
+        } catch (BookingException $exception) {
+            if ($exception->errorCode === 'BOOKING_NOT_FOUND') {
+                throw new NotFoundHttpException();
+            }
+            $this->flash->add('info', $exception->getMessage());
+        }
+        return Response::redirect($this->url('/account/bookings/' . rawurlencode($code)), 303);
     }
 
     public function customerUpdate(Request $request): Response
@@ -115,6 +201,33 @@ final readonly class BookingPortalController
             $this->organization()->id,
         ));
         return $this->detailView($booking, '/partner/bookings', false);
+    }
+
+    public function partnerWaivers(Request $request): Response
+    {
+        return $this->view('bookings/portal/waivers', [
+            'title' => 'Yêu cầu miễn phí hủy',
+            'waivers' => $this->waivers->pendingForOrganization($this->organization()->id),
+            'activeNavigation' => 'waivers',
+        ])->withHeader('Cache-Control', 'no-store, private');
+    }
+
+    public function partnerWaiverDecision(Request $request): Response
+    {
+        try {
+            $this->waivers->decide(
+                (int) $request->route('waiverId', '0'),
+                $this->organization()->id,
+                $this->user()->id,
+                WaiverDecision::fromInput($request->body),
+                $request->requestId,
+                $request->clientIp,
+            );
+            $this->flash->add('success', 'Đã ghi nhận quyết định cho yêu cầu miễn phí hủy.');
+        } catch (BookingException|InvalidArgumentException $exception) {
+            $this->flash->add('info', $exception->getMessage());
+        }
+        return Response::redirect($this->url('/partner/waivers'), 303);
     }
 
     public function adminIndex(Request $request): Response
@@ -174,15 +287,49 @@ final readonly class BookingPortalController
         ])->withHeader('Cache-Control', 'no-store, private');
     }
 
-    private function detailView(Booking $booking, string $listPath, bool $editable): Response
+    private function detailView(
+        Booking $booking,
+        string $listPath,
+        bool $editable,
+        ?CancellationQuote $cancellationQuote = null,
+        array $waivers = [],
+    ): Response
     {
         return $this->view('bookings/portal/show', [
             'title' => 'Booking ' . $booking->code,
             'booking' => $this->presenter->booking($booking),
             'listPath' => $listPath,
             'editable' => $editable && $booking->status === 'CONFIRMED',
+            'cancellationQuote' => $cancellationQuote === null ? null : [
+                'calculatedAt' => $cancellationQuote->calculatedAt->format(DATE_ATOM),
+                'validUntil' => $cancellationQuote->validUntil->format(DATE_ATOM),
+                'fee' => $cancellationQuote->fee->decimal(),
+                'expectedRefund' => $cancellationQuote->expectedRefund->decimal(),
+                'items' => $cancellationQuote->items,
+            ],
+            'cancellationKey' => $cancellationQuote === null ? null : $this->uuid(),
+            'waivers' => $waivers,
             'activeNavigation' => 'bookings',
         ])->withHeader('Cache-Control', 'no-store, private');
+    }
+
+    private function customerDetail(Booking $booking): Response
+    {
+        $quote = null;
+        if ($booking->status === 'CONFIRMED') {
+            try {
+                $quote = $this->cancellationQuotes->preview($booking->code, $this->user()->id);
+            } catch (BookingException) {
+                $quote = null;
+            }
+        }
+        return $this->detailView(
+            $booking,
+            '/account/bookings',
+            true,
+            $quote,
+            $this->waivers->forCustomerBooking($booking->id, $this->user()->id),
+        );
     }
 
     /** @param array<string, mixed> $data */
@@ -256,6 +403,37 @@ final readonly class BookingPortalController
             throw new ValidationHttpException([$name => ['Tham số truy vấn không hợp lệ.']]);
         }
         return trim((string) $value);
+    }
+
+    private function bodyString(Request $request, string $name): string
+    {
+        $value = $request->body[$name] ?? '';
+        return is_string($value) ? trim($value) : '';
+    }
+
+    private function positiveInt(Request $request, string $name): int
+    {
+        $value = $request->body[$name] ?? null;
+        if (filter_var($value, FILTER_VALIDATE_INT) === false || (int) $value < 1) {
+            throw new BookingException('WAIVER_NOT_FOUND', 'Không tìm thấy yêu cầu miễn phí hủy.');
+        }
+        return (int) $value;
+    }
+
+    private function uuid(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($bytes);
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20),
+        );
     }
 
     private function url(string $path): string

@@ -572,6 +572,9 @@ final class App
             static fn (Container $container): BookingPortalController => new BookingPortalController(
                 $container->get(BookingAccessService::class),
                 $container->get(BookingModificationService::class),
+                $container->get(CancellationQuoteService::class),
+                $container->get(CancellationService::class),
+                $container->get(WaiverService::class),
                 $container->get(BookingViewPresenter::class),
                 $container->get(IdentitySession::class),
                 $container->get(SessionBootstrap::class),

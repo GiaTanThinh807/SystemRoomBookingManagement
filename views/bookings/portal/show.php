@@ -8,6 +8,14 @@ $mealLabels = ['ROOM_ONLY' => 'Không gồm bữa sáng', 'BREAKFAST_INCLUDED' =
 $guestType = ['ADULT' => 'Người lớn', 'CHILD' => 'Trẻ em', 'GUEST' => 'Khách'];
 $money = static fn (mixed $amount): string => number_format((float) $amount, 0, ',', '.') . ' ₫';
 $date = static fn (mixed $value): string => date('d/m/Y', strtotime((string) $value));
+$escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$pendingWaiver = null;
+foreach ($waivers as $waiver) {
+    if (($waiver['status'] ?? null) === 'PENDING') {
+        $pendingWaiver = $waiver;
+        break;
+    }
+}
 ?>
 <nav class="resource-breadcrumb"><a href="<?= $baseUrl . $listPath ?>">Danh sách booking</a><svg class="app-icon"><use href="#icon-chevron"/></svg><span><?= $booking['code'] ?></span></nav>
 
@@ -53,6 +61,58 @@ $date = static fn (mixed $value): string => date('d/m/Y', strtotime((string) $va
                 <div class="booking-edit-note"><svg class="app-icon"><use href="#icon-review"/></svg><span>Giá, chính sách, ngày ở, số khách và tồn phòng sẽ không thay đổi.</span></div>
                 <button class="button button--primary" type="submit">Lưu thông tin khách</button>
             </form>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($listPath === '/account/bookings'): ?>
+        <section class="booking-card booking-cancellation-card">
+            <div class="booking-card__heading"><span class="booking-card__icon"><svg class="app-icon"><use href="#icon-review"/></svg></span><div><h2>Hủy đặt chỗ</h2><p>Phí được tính từ chính sách snapshot tại thời điểm đặt và được kiểm tra lại khi bạn xác nhận.</p></div></div>
+            <?php if ($cancellationQuote !== null): ?>
+                <div class="cancellation-quote">
+                    <div><span>Phí hủy hiện tại</span><strong><?= $money($cancellationQuote['fee']) ?></strong></div>
+                    <div><span>Tiền dự kiến hoàn</span><strong><?= $money($cancellationQuote['expectedRefund']) ?></strong></div>
+                    <div><span>Báo giá có hiệu lực đến</span><strong><?= date('d/m/Y H:i', strtotime((string) $cancellationQuote['validUntil'])) ?></strong></div>
+                </div>
+                <form class="booking-cancel-form" method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/cancel">
+                    <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                    <input type="hidden" name="cancellationKey" value="<?= $cancellationKey ?>">
+                    <input type="hidden" name="expectedFee" value="<?= $cancellationQuote['fee'] ?>">
+                    <label class="field"><span>Lý do hủy</span><textarea name="reason" rows="3" minlength="5" maxlength="1000" required placeholder="Cho cơ sở biết lý do bạn hủy booking"></textarea></label>
+                    <div class="cancellation-actions">
+                        <button class="button button--danger" type="submit">Xác nhận hủy booking</button>
+                    </div>
+                </form>
+                <form method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/cancel-preview">
+                    <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                    <button class="button button--secondary" type="submit">Tính lại báo giá hủy</button>
+                </form>
+            <?php elseif ($booking['status'] === 'CONFIRMED'): ?>
+                <p class="empty-state">Hiện không thể lập báo giá hủy cho booking này.</p>
+            <?php endif; ?>
+
+            <?php if ($booking['status'] === 'CONFIRMED'): ?>
+                <div class="waiver-panel">
+                    <h3>Yêu cầu miễn phí hủy</h3>
+                    <?php if ($pendingWaiver !== null): ?>
+                        <p>Yêu cầu #<?= (int) $pendingWaiver['id'] ?> đang chờ cơ sở phản hồi.</p>
+                        <form method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/waiver/withdraw">
+                            <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                            <input type="hidden" name="waiverId" value="<?= (int) $pendingWaiver['id'] ?>">
+                            <button class="button button--secondary" type="submit">Rút yêu cầu</button>
+                        </form>
+                    <?php else: ?>
+                        <form class="booking-cancel-form" method="post" action="<?= $baseUrl ?>/account/bookings/<?= rawurlencode((string) $booking['code']) ?>/waiver">
+                            <input type="hidden" name="_token" value="<?= $csrfToken ?>">
+                            <label class="field"><span>Lý do xin miễn phí hủy</span><textarea name="reason" rows="3" minlength="5" maxlength="1000" required placeholder="Mô tả hoàn cảnh để cơ sở xem xét"></textarea></label>
+                            <button class="button button--primary" type="submit">Gửi yêu cầu xem xét</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($waivers !== []): ?>
+                <div class="waiver-history"><h3>Lịch sử yêu cầu</h3><?php foreach ($waivers as $waiver): ?><article><span class="booking-status booking-status--<?= strtolower((string) $waiver['status']) ?>"><i></i><?= $escape($waiver['status']) ?></span><p><?= $escape($waiver['reason']) ?></p><?php if ($waiver['response'] !== null): ?><small>Phản hồi: <?= $escape($waiver['response']) ?></small><?php endif; ?></article><?php endforeach; ?></div>
+            <?php endif; ?>
         </section>
         <?php endif; ?>
     </main>

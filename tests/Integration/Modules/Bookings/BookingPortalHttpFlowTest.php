@@ -29,6 +29,8 @@ final class BookingPortalHttpFlowTest extends TestCase
     private array $originalParties = [];
     /** @var list<string> */
     private array $requestIds = [];
+    /** @var list<int> */
+    private array $createdWaivers = [];
 
     protected function setUp(): void
     {
@@ -62,6 +64,10 @@ final class BookingPortalHttpFlowTest extends TestCase
             $statement = $this->pdo->prepare('DELETE FROM NhatKyHeThong WHERE RequestID=?');
             foreach ($this->requestIds as $requestId) {
                 $statement->execute([$requestId]);
+            }
+            $deleteWaiver = $this->pdo->prepare('DELETE FROM YeuCauHuyMienPhi WHERE YeuCauHuyMienPhiID=?');
+            foreach ($this->createdWaivers as $waiverId) {
+                $deleteWaiver->execute([$waiverId]);
             }
         }
         if (isset($this->session) && session_status() === PHP_SESSION_ACTIVE) {
@@ -163,6 +169,72 @@ final class BookingPortalHttpFlowTest extends TestCase
         $audit = $this->pdo->prepare('SELECT HanhDong FROM NhatKyHeThong WHERE RequestID=?');
         $audit->execute([$adminRequestId]);
         self::assertSame('ADMIN_BOOKING_VIEW', $audit->fetchColumn());
+    }
+
+    public function test_customer_submits_waiver_and_partner_rejects_it_through_http(): void
+    {
+        $booking = $this->futureConfirmedBooking();
+        $this->signIn((int) $booking['customerId']);
+
+        $detail = $this->app->handle(new Request(
+            'GET', '/account/bookings/' . $booking['code'], requestId: $this->requestId('waiver-detail'),
+        ));
+        self::assertSame(200, $detail->status());
+        self::assertStringContainsString('/cancel-preview', $detail->body());
+        self::assertStringContainsString('Yêu cầu miễn phí hủy', $detail->body());
+
+        $createId = $this->requestId('waiver-create');
+        $created = $this->app->handle(new Request(
+            'POST',
+            '/account/bookings/' . $booking['code'] . '/waiver',
+            body: [
+                '_token' => $this->session->csrfToken(),
+                'reason' => 'Khách cần thay đổi lịch trình và xin cơ sở hỗ trợ.',
+            ],
+            requestId: $createId,
+            clientIp: '127.0.0.1',
+        ));
+        self::assertSame(303, $created->status());
+        $waiverId = (int) $this->pdo->query(
+            'SELECT YeuCauHuyMienPhiID FROM YeuCauHuyMienPhi WHERE DatChoID=' . (int) $booking['id']
+            . " AND TrangThai='PENDING' ORDER BY YeuCauHuyMienPhiID DESC LIMIT 1"
+        )->fetchColumn();
+        self::assertGreaterThan(0, $waiverId);
+        $this->createdWaivers[] = $waiverId;
+        self::assertSame('CONFIRMED', $this->scalar('SELECT TrangThai FROM DatCho WHERE DatChoID=' . (int) $booking['id']));
+
+        $organizationId = (int) $this->pdo->query(
+            'SELECT cs.ToChucDoiTacID FROM DatCho dc INNER JOIN CoSoLuuTru cs ON cs.CoSoLuuTruID=dc.CoSoLuuTruID '
+            . 'WHERE dc.DatChoID=' . (int) $booking['id']
+        )->fetchColumn();
+        $partnerId = (int) $this->pdo->query(
+            "SELECT NguoiDungID FROM ThanhVienDoiTac WHERE ToChucDoiTacID={$organizationId} LIMIT 1"
+        )->fetchColumn();
+        $user = (new UserRepository($this->pdo))->findById($partnerId);
+        $organization = (new PartnerMembershipRepository($this->pdo))->findOrganizationForUser($partnerId);
+        self::assertNotNull($user);
+        self::assertNotNull($organization);
+        $this->identity->signIn($user->toCurrentUser(), $organization);
+
+        $queue = $this->app->handle(new Request('GET', '/partner/waivers', requestId: $this->requestId('waiver-list')));
+        self::assertSame(200, $queue->status());
+        self::assertStringContainsString('Yêu cầu #' . $waiverId, $queue->body());
+        $decision = $this->app->handle(new Request(
+            'POST',
+            '/partner/waivers/' . $waiverId . '/decision',
+            body: [
+                '_token' => $this->session->csrfToken(),
+                'decision' => 'REJECTED',
+                'response' => 'Cơ sở chưa thể hỗ trợ yêu cầu này.',
+            ],
+            requestId: $this->requestId('waiver-reject'),
+            clientIp: '127.0.0.1',
+        ));
+        self::assertSame(303, $decision->status());
+        self::assertSame('REJECTED', $this->scalar(
+            'SELECT TrangThai FROM YeuCauHuyMienPhi WHERE YeuCauHuyMienPhiID=' . $waiverId,
+        ));
+        self::assertSame('CONFIRMED', $this->scalar('SELECT TrangThai FROM DatCho WHERE DatChoID=' . (int) $booking['id']));
     }
 
     /** @return array<string, mixed> */
