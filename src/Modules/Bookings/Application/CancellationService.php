@@ -37,60 +37,60 @@ final readonly class CancellationService
         $code = $this->code($code);
         try {
             $state = $this->transactions->run(function () use ($code, $customerId, $command, $clientIp): array {
-            $context = $this->cancellations->lockForCustomer($code, $customerId);
-            if ($context === null) {
-                throw new BookingException('BOOKING_NOT_FOUND', 'Không tìm thấy booking thuộc tài khoản hiện tại.');
-            }
-            $payment = $this->payments->lockByBookingId((int) $context['id']);
-            if (!$payment instanceof Payment) {
-                throw new BookingException('PAYMENT_NOT_FOUND', 'Booking thiếu payment record bắt buộc.');
-            }
-            $keyOwner = $this->cancellations->findByCancellationKey($command->idempotencyKey);
-            if ($keyOwner !== null && $keyOwner['bookingId'] !== (int) $context['id']) {
-                throw new BookingException('IDEMPOTENCY_CONFLICT', 'Khóa hủy đã được dùng cho thao tác khác.');
-            }
-            $fingerprint = $command->fingerprint((int) $context['id'], $customerId);
-            if ($context['status'] === 'CANCELLED') {
-                $this->assertReplay($context, $command, $fingerprint, $customerId);
-                $expected = Money::vnd((string) ($context['calculation']['refundExpected'] ?? '0'));
-                if ($payment->refundStatus === 'FAILED' && !$expected->isZero()) {
-                    $this->payments->startRefund(
-                        $payment->id,
-                        $expected,
-                        CancellationFinalizer::refundKey($command->idempotencyKey),
-                        'BOOKING_CANCELLATION',
+                $context = $this->cancellations->lockForCustomer($code, $customerId);
+                if ($context === null) {
+                    throw new BookingException('BOOKING_NOT_FOUND', 'Không tìm thấy booking thuộc tài khoản hiện tại.');
+                }
+                $payment = $this->payments->lockByBookingId((int) $context['id']);
+                if (!$payment instanceof Payment) {
+                    throw new BookingException('PAYMENT_NOT_FOUND', 'Booking thiếu payment record bắt buộc.');
+                }
+                $keyOwner = $this->cancellations->findByCancellationKey($command->idempotencyKey);
+                if ($keyOwner !== null && $keyOwner['bookingId'] !== (int) $context['id']) {
+                    throw new BookingException('IDEMPOTENCY_CONFLICT', 'Khóa hủy đã được dùng cho thao tác khác.');
+                }
+                $fingerprint = $command->fingerprint((int) $context['id'], $customerId);
+                if ($context['status'] === 'CANCELLED') {
+                    $this->assertReplay($context, $command, $fingerprint, $customerId);
+                    $expected = Money::vnd((string) ($context['calculation']['refundExpected'] ?? '0'));
+                    if ($payment->refundStatus === 'FAILED' && !$expected->isZero()) {
+                        $this->payments->startRefund(
+                            $payment->id,
+                            $expected,
+                            CancellationFinalizer::refundKey($command->idempotencyKey),
+                            'BOOKING_CANCELLATION',
+                        );
+                    }
+                    return ['bookingId' => (int) $context['id'], 'expectedRefund' => $expected];
+                }
+                if ($context['status'] !== 'CONFIRMED') {
+                    throw new BookingException('BOOKING_NOT_CANCELLABLE', 'Booking hiện tại không thể hủy trực tiếp.');
+                }
+                $now = $this->clock->now();
+                if ($now >= $this->cutoff($context)) {
+                    throw new BookingException('BOOKING_CUTOFF_PASSED', 'Đã đến hoặc qua thời điểm nhận phòng của cơ sở.');
+                }
+                $breakdown = $this->fees->calculate($context, $now);
+                if (!$breakdown->fee->equals($command->expectedFee)) {
+                    throw new BookingException(
+                        'CANCELLATION_QUOTE_CHANGED',
+                        'Phí hủy đã thay đổi. Hãy xem lại báo giá mới trước khi xác nhận.',
                     );
                 }
-                return ['bookingId' => (int) $context['id'], 'expectedRefund' => $expected];
-            }
-            if ($context['status'] !== 'CONFIRMED') {
-                throw new BookingException('BOOKING_NOT_CANCELLABLE', 'Booking hiện tại không thể hủy trực tiếp.');
-            }
-            $now = $this->clock->now();
-            if ($now >= $this->cutoff($context)) {
-                throw new BookingException('BOOKING_CUTOFF_PASSED', 'Đã đến hoặc qua thời điểm nhận phòng của cơ sở.');
-            }
-            $breakdown = $this->fees->calculate($context, $now);
-            if (!$breakdown->fee->equals($command->expectedFee)) {
-                throw new BookingException(
-                    'CANCELLATION_QUOTE_CHANGED',
-                    'Phí hủy đã thay đổi. Hãy xem lại báo giá mới trước khi xác nhận.',
+                $expectedRefund = $this->finalizer->finalize(
+                    $context,
+                    $payment,
+                    $command->idempotencyKey,
+                    $customerId,
+                    $command->reason,
+                    $breakdown->fee,
+                    $breakdown->items,
+                    $fingerprint,
+                    'BOOKING_CANCELLED',
+                    $clientIp,
+                    $now,
                 );
-            }
-            $expectedRefund = $this->finalizer->finalize(
-                $context,
-                $payment,
-                $command->idempotencyKey,
-                $customerId,
-                $command->reason,
-                $breakdown->fee,
-                $breakdown->items,
-                $fingerprint,
-                'BOOKING_CANCELLED',
-                $clientIp,
-                $now,
-            );
-            return ['bookingId' => (int) $context['id'], 'expectedRefund' => $expectedRefund];
+                return ['bookingId' => (int) $context['id'], 'expectedRefund' => $expectedRefund];
             });
         } catch (PDOException $exception) {
             if ((string) ($exception->errorInfo[0] ?? $exception->getCode()) === '23000'
