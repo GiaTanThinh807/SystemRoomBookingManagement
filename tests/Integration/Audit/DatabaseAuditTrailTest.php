@@ -38,6 +38,10 @@ final class DatabaseAuditTrailTest extends TestCase
             self::assertSame('PROPERTY_UPDATED', $audit['HanhDong']);
             self::assertJsonStringEqualsJsonString('{"status":"DRAFT"}', $audit['DuLieuTruocJSON']);
             self::assertJsonStringEqualsJsonString('{"status":"PENDING_REVIEW"}', $audit['DuLieuSauJSON']);
+            $loaded = (new DatabaseAuditTrail($pdo))->findByRequestId($requestId);
+            self::assertSame('PROPERTY_UPDATED', $loaded['action'] ?? null);
+            self::assertSame(['status' => 'DRAFT'], $loaded['before'] ?? null);
+            self::assertSame(['status' => 'PENDING_REVIEW'], $loaded['after'] ?? null);
         } finally {
             $pdo->rollBack();
         }

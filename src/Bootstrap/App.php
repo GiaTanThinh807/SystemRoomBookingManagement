@@ -15,6 +15,7 @@ use App\Http\Middleware\AuthMiddleware;
 use App\Http\Middleware\CsrfMiddleware;
 use App\Http\Middleware\PartnerContextMiddleware;
 use App\Http\Middleware\RequestIdMiddleware;
+use App\Modules\Bookings\Application\BookingAccessService;
 use App\Modules\Bookings\Application\BookingService;
 use App\Modules\Bookings\Application\OnlinePaymentService;
 use App\Modules\Bookings\Application\PaymentExpiryService;
@@ -405,6 +406,14 @@ final class App
         $container->singleton(
             BookingCodeGenerator::class,
             static fn (Container $_): BookingCodeGenerator => new BookingCodeGenerator(),
+        );
+        $container->singleton(
+            BookingAccessService::class,
+            static fn (Container $container): BookingAccessService => new BookingAccessService(
+                $container->get(BookingRepository::class),
+                $container->get(AuditTrail::class),
+                $container->get(TransactionManager::class),
+            ),
         );
         $container->singleton(
             BookingService::class,

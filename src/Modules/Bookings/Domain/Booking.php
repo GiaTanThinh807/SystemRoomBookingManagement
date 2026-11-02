@@ -40,10 +40,11 @@ final readonly class Booking
             throw new InvalidArgumentException('Booking phải có mã và ít nhất một hạng mục.');
         }
         if (!in_array($this->paymentTiming, ['PAY_AT_PROPERTY', 'PAY_ONLINE'], true)
-            || !in_array($this->status, ['PENDING_PAYMENT', 'CONFIRMED', 'PAYMENT_FAILED'], true)) {
+            || !in_array($this->status, ['PENDING_PAYMENT', 'CONFIRMED', 'PAYMENT_FAILED', 'CANCELLED', 'NO_SHOW', 'COMPLETED'], true)) {
             throw new InvalidArgumentException('Timing hoặc trạng thái booking chưa hợp lệ.');
         }
-        if (($this->status === 'CONFIRMED') !== ($this->confirmedAt !== null)) {
+        $confirmedLifecycle = in_array($this->status, ['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'COMPLETED'], true);
+        if ($confirmedLifecycle !== ($this->confirmedAt !== null)) {
             throw new InvalidArgumentException('Thời điểm xác nhận phải khớp trạng thái booking.');
         }
     }

@@ -127,6 +127,42 @@ final readonly class BookingRepository
         $statement->execute(['bookingId' => $bookingId, 'grandTotal' => $grandTotal->decimal()]);
     }
 
+    /** @return array{items: list<array<string, mixed>>, total: int} */
+    public function paginateForCustomer(int $customerId, int $page, int $perPage, ?string $status): array
+    {
+        return $this->paginate(
+            'dc.KhachHangID = :scopeId',
+            ['scopeId' => $customerId],
+            $page,
+            $perPage,
+            $status,
+        );
+    }
+
+    /** @return array{items: list<array<string, mixed>>, total: int} */
+    public function paginateForOrganization(int $organizationId, int $page, int $perPage, ?string $status): array
+    {
+        return $this->paginate(
+            'cs.ToChucDoiTacID = :scopeId',
+            ['scopeId' => $organizationId],
+            $page,
+            $perPage,
+            $status,
+        );
+    }
+
+    /** @return array{items: list<array<string, mixed>>, total: int} */
+    public function paginateForAdmin(int $page, int $perPage, ?string $status, ?string $query): array
+    {
+        $where = '1 = 1';
+        $parameters = [];
+        if ($query !== null) {
+            $where .= ' AND (dc.MaDatCho LIKE :query OR dc.EmailNguoiDat LIKE :query OR cs.TenCoSo LIKE :query)';
+            $parameters['query'] = '%' . $query . '%';
+        }
+        return $this->paginate($where, $parameters, $page, $perPage, $status);
+    }
+
     /** @return array<string, mixed>|null */
     public function lockState(int $bookingId): ?array
     {
@@ -184,6 +220,71 @@ final readonly class BookingRepository
         $statement->execute(['code' => $code, 'customerId' => $customerId]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
         return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    public function findForOrganizationByCode(string $code, int $organizationId): ?Booking
+    {
+        $statement = $this->pdo->prepare(
+            $this->bookingSql()
+            . ' WHERE dc.MaDatCho = :code AND cs.ToChucDoiTacID = :organizationId'
+        );
+        $statement->execute(['code' => $code, 'organizationId' => $organizationId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    public function findByCode(string $code): ?Booking
+    {
+        $statement = $this->pdo->prepare($this->bookingSql() . ' WHERE dc.MaDatCho = :code');
+        $statement->execute(['code' => $code]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    /**
+     * @param array<string, int|string> $parameters
+     * @return array{items: list<array<string, mixed>>, total: int}
+     */
+    private function paginate(
+        string $scopeWhere,
+        array $parameters,
+        int $page,
+        int $perPage,
+        ?string $status,
+    ): array {
+        $where = $scopeWhere;
+        if ($status !== null) {
+            $where .= ' AND dc.TrangThai = :status';
+            $parameters['status'] = $status;
+        }
+        $count = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM DatCho dc
+             INNER JOIN CoSoLuuTru cs ON cs.CoSoLuuTruID = dc.CoSoLuuTruID
+             WHERE ' . $where
+        );
+        $count->execute($parameters);
+
+        $offset = ($page - 1) * $perPage;
+        $statement = $this->pdo->prepare(
+            'SELECT dc.MaDatCho AS code, cs.TenCoSo AS propertyName,
+                    dc.TenNguoiDat AS bookerName, dc.EmailNguoiDat AS bookerEmail,
+                    dc.NgayNhanPhong AS checkIn, dc.NgayTraPhong AS checkOut,
+                    dc.ThoiDiemThanhToan AS paymentTiming, dc.TongTien AS grandTotal,
+                    dc.TrangThai AS status, dc.TaoLuc AS createdAt,
+                    (SELECT COUNT(*) FROM HangMucDatCho hm WHERE hm.DatChoID = dc.DatChoID) AS roomCount
+             FROM DatCho dc
+             INNER JOIN CoSoLuuTru cs ON cs.CoSoLuuTruID = dc.CoSoLuuTruID
+             WHERE ' . $where . '
+             ORDER BY dc.TaoLuc DESC, dc.DatChoID DESC
+             LIMIT ' . $perPage . ' OFFSET ' . $offset
+        );
+        $statement->execute($parameters);
+        $items = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $row['roomCount'] = (int) $row['roomCount'];
+            $items[] = $row;
+        }
+        return ['items' => $items, 'total' => (int) $count->fetchColumn()];
     }
 
     private function bookingSql(): string

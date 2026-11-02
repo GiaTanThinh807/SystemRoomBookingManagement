@@ -6,6 +6,9 @@ namespace App\Shared\Audit;
 
 interface AuditTrail
 {
+    /** @return array<string, mixed>|null */
+    public function findByRequestId(string $requestId): ?array;
+
     /**
      * @param array<string, mixed>|null $before
      * @param array<string, mixed>|null $after
