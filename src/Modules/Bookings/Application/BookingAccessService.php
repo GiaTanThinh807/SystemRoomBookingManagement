@@ -69,6 +69,7 @@ final readonly class BookingAccessService
         string $clientIp,
     ): ?Booking {
         $this->positiveId($adminId);
+        $requestId = $this->requestId($requestId);
         $booking = $this->bookings->findByCode($this->code($code));
         if (!$booking instanceof Booking) {
             return null;
@@ -127,5 +128,14 @@ final readonly class BookingAccessService
             throw new InvalidArgumentException('Mã booking không hợp lệ.');
         }
         return $code;
+    }
+
+    private function requestId(string $requestId): string
+    {
+        $requestId = trim($requestId);
+        if (preg_match('/^[A-Za-z0-9._-]{8,80}$/', $requestId) !== 1) {
+            throw new BookingException('REQUEST_ID_INVALID', 'RequestID audit booking không hợp lệ.');
+        }
+        return $requestId;
     }
 }

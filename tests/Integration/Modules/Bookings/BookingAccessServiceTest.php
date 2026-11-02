@@ -125,4 +125,16 @@ final class BookingAccessServiceTest extends TestCase
         self::assertNotEmpty($booking->items[0]['nights']);
         self::assertNotNull($booking->confirmedAt);
     }
+
+    public function test_admin_view_rejects_request_id_longer_than_audit_column(): void
+    {
+        $code = (string) $this->pdo->query('SELECT MaDatCho FROM DatCho ORDER BY DatChoID LIMIT 1')->fetchColumn();
+        $adminId = (int) $this->pdo->query(
+            "SELECT NguoiDungID FROM NguoiDung WHERE VaiTro='ADMIN' ORDER BY NguoiDungID LIMIT 1"
+        )->fetchColumn();
+
+        $this->expectException(BookingException::class);
+        $this->expectExceptionMessage('RequestID audit booking không hợp lệ.');
+        $this->service->adminBooking($code, $adminId, str_repeat('a', 81), '127.0.0.1');
+    }
 }

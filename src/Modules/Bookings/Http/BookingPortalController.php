@@ -139,12 +139,16 @@ final readonly class BookingPortalController
     public function adminShow(Request $request): Response
     {
         $user = $this->user();
-        $booking = $this->lookup(fn (): ?Booking => $this->access->adminBooking(
-            $this->code($request),
-            $user->id,
-            $request->requestId,
-            $request->clientIp,
-        ));
+        try {
+            $booking = $this->lookup(fn (): ?Booking => $this->access->adminBooking(
+                $this->code($request),
+                $user->id,
+                $request->requestId,
+                $request->clientIp,
+            ));
+        } catch (BookingException $exception) {
+            throw new ValidationHttpException(['requestId' => [$exception->getMessage()]]);
+        }
         return $this->detailView($booking, '/admin/bookings', false);
     }
 
