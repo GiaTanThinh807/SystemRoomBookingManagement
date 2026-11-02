@@ -1,8 +1,7 @@
 # Bookings
 
-Module Bookings sở hữu preview, booking, snapshot lịch sử và payment gắn với
-booking. Giai đoạn 8 hoàn thành preview; giai đoạn 9 mở lát dọc đặt phòng trả tại
-cơ sở. Thanh toán online, hủy và quản lý booking thuộc các giai đoạn sau.
+Module Bookings sở hữu preview, booking, snapshot lịch sử, payment, quản lý
+booking, hủy/refund/waiver và đổi ngày lưu trú.
 
 ## Luồng preview
 
@@ -58,8 +57,22 @@ cơ sở. Thanh toán online, hủy và quản lý booking thuộc các giai đo
 - `PAY_AT_PROPERTY` không ghi nhận tiền cơ sở trực tiếp thu: `DaThanhToan = 0`,
   `DaHoan = 0`, payment giữ trạng thái `NOT_TRACKED`.
 
-## Ranh giới giai đoạn 9
+## Đổi ngày lưu trú
 
-Giai đoạn 9 chưa xử lý `PAY_ONLINE`, payment provider mô phỏng, danh sách/quản
-lý booking, hủy, đổi ngày, no-show hoặc hoàn tất. Các luồng này phải dùng lại
-snapshot và thứ tự khóa đã thiết lập ở đây.
+- Chỉ booking `CONFIRMED + PAY_AT_PROPERTY + NOT_TRACKED` và còn trước giờ nhận
+  phòng địa phương được đổi ngày.
+- Preview luôn tính lại rate, restriction, promotion, chính sách và capacity;
+  không giữ tồn và không tin tổng tiền từ client.
+- Xác nhận khóa booking → payment → commercial rows → toàn bộ ledger → union
+  inventory đã sort, rồi kiểm fingerprint và phần delta capacity.
+- Đêm giao nhau giữ nguyên; old-only được release; new-only được insert hoặc tái
+  kích hoạt ledger `RELEASED` để không vi phạm unique key.
+- Ngày booking, nightly prices, snapshot item, tổng booking/payment, ledger,
+  counter và audit thay đổi trong cùng transaction. Retry cùng `RequestID` và
+  payload chỉ trả kết quả cũ.
+
+## Ranh giới hiện tại
+
+Module chưa xử lý no-show, completion, verified review và báo cáo quản trị; đó
+là các giai đoạn sau. Mọi use case mới vẫn phải giữ snapshot lịch sử, tenant
+scope, idempotency và lock order đã thiết lập.
