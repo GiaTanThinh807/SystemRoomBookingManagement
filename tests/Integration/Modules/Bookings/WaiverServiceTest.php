@@ -17,7 +17,10 @@ use App\Modules\Bookings\Infrastructure\CancellationRepository;
 use App\Modules\Bookings\Infrastructure\PaymentRepository;
 use App\Modules\Bookings\Infrastructure\WaiverRepository;
 use App\Modules\Inventory\Application\TransactionalInventoryReservationService;
+use App\Modules\Inventory\Application\BookingInventoryItem;
+use App\Modules\Inventory\Application\InventoryReservationService;
 use App\Modules\Inventory\Infrastructure\InventoryRepository;
+use App\Shared\Contract\InventoryDemand;
 use App\Shared\Audit\DatabaseAuditTrail;
 use App\Shared\Clock\FrozenClock;
 use App\Shared\Database\TransactionManager;
@@ -195,6 +198,38 @@ final class WaiverServiceTest extends TestCase
         self::assertSame('CONFIRMED', $this->value('SELECT TrangThai FROM DatCho WHERE DatChoID=' . (int) $row['DatChoID']));
     }
 
+    public function test_approval_rolls_back_when_cancellation_primitive_fails(): void
+    {
+        $row = $this->fixture('PAY_AT_PROPERTY');
+        $clock = new FrozenClock($this->cutoff($row)->modify('-2 hours'));
+        $waiverId = $this->service($clock)->request(
+            (string) $row['MaDatCho'],
+            (int) $row['KhachHangID'],
+            'Xin hỗ trợ hủy để kiểm tra rollback nguyên tử.',
+            'waiver-create-' . bin2hex(random_bytes(6)),
+            '127.0.0.1',
+        );
+        $beforeHolds = $this->activeHolds((int) $row['DatChoID']);
+
+        try {
+            $this->service($clock, new WaiverFailingInventory())->decide(
+                $waiverId,
+                (int) $row['organizationId'],
+                2,
+                new WaiverDecision('APPROVED', 'Đồng ý nhưng primitive mô phỏng bị lỗi.'),
+                'waiver-decide-' . bin2hex(random_bytes(6)),
+                '127.0.0.1',
+            );
+            self::fail('Lỗi primitive phải rollback toàn bộ quyết định waiver.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('SIMULATED_RELEASE_FAILURE', $exception->getMessage());
+        }
+
+        self::assertSame('PENDING', $this->value('SELECT TrangThai FROM YeuCauHuyMienPhi WHERE YeuCauHuyMienPhiID=' . $waiverId));
+        self::assertSame('CONFIRMED', $this->value('SELECT TrangThai FROM DatCho WHERE DatChoID=' . (int) $row['DatChoID']));
+        self::assertSame($beforeHolds, $this->activeHolds((int) $row['DatChoID']));
+    }
+
     /** @return array<string, mixed> */
     private function fixture(string $timing): array
     {
@@ -228,7 +263,7 @@ final class WaiverServiceTest extends TestCase
         return $row;
     }
 
-    private function service(FrozenClock $clock): WaiverService
+    private function service(FrozenClock $clock, ?InventoryReservationService $inventory = null): WaiverService
     {
         $cancellations = new CancellationRepository($this->pdo);
         $payments = new PaymentRepository($this->pdo);
@@ -238,7 +273,7 @@ final class WaiverServiceTest extends TestCase
         $finalizer = new CancellationFinalizer(
             $cancellations,
             $payments,
-            new TransactionalInventoryReservationService($this->pdo, new InventoryRepository($this->pdo), $clock),
+            $inventory ?? new TransactionalInventoryReservationService($this->pdo, new InventoryRepository($this->pdo), $clock),
             $audit,
         );
         return new WaiverService(
@@ -290,6 +325,35 @@ final class WaiverServiceTest extends TestCase
     private function value(string $sql): string
     {
         return (string) $this->pdo->query($sql)->fetchColumn();
+    }
+}
+
+final class WaiverFailingInventory implements InventoryReservationService
+{
+    /** @param list<InventoryDemand> $demands */
+    public function lockAndAssertAvailable(array $demands): void
+    {
+    }
+
+    /** @param list<BookingInventoryItem> $items */
+    public function holdForBooking(int $bookingId, array $items, ?DateTimeImmutable $expiresAt): void
+    {
+    }
+
+    public function confirmActive(int $bookingId): int
+    {
+        return 0;
+    }
+
+    public function releaseActive(int $bookingId, string $reason): int
+    {
+        throw new \RuntimeException('SIMULATED_RELEASE_FAILURE');
+    }
+
+    /** @return list<int> */
+    public function findExpiredBookingIds(DateTimeImmutable $at, int $limit = 100): array
+    {
+        return [];
     }
 }
 
