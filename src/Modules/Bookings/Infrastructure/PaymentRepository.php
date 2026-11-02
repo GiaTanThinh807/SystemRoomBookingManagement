@@ -51,6 +51,16 @@ final readonly class PaymentRepository
         }
     }
 
+    public function updatePayAtPropertyTotal(int $paymentId, Money $total): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE ThanhToan SET TongPhaiTra=:total
+             WHERE ThanhToanID=:paymentId AND ThoiDiemThanhToan='PAY_AT_PROPERTY'
+               AND TrangThai='NOT_TRACKED' AND DaThanhToan=0 AND DaHoan=0"
+        );
+        $statement->execute(['total' => $total->decimal(), 'paymentId' => $paymentId]);
+    }
+
     public function markPaid(int $paymentId, Money $amount, string $reference, DateTimeImmutable $at): void
     {
         $statement = $this->pdo->prepare(
